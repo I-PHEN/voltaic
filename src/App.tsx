@@ -2,6 +2,25 @@ import { useState } from 'react'
 import styles from './components/Layout.module.css'
 import { devices } from './data/devices'
 
+const getDeviceColor = (type: string) => {
+  switch (type) {
+    case 'Spectrum Analyzer':
+      return '#c084fc' // Purple
+    case 'Oscilloscope':
+      return '#22d3ee' // Cyan
+    case 'Power Supply':
+      return '#f97316' // Orange
+    case 'Function Generator':
+      return '#34d399' // Green
+    case 'Vector Network Analyzer':
+      return '#3b82f6' // Blue
+    case 'Step Attenuator':
+      return '#fbbf24' // Amber
+    default:
+      return '#64748b' // Slate/gray
+  }
+}
+
 function App() {
   const [chatInput, setChatInput] = useState('')
 
@@ -14,16 +33,34 @@ function App() {
 
   return (
     <div className={styles.appContainer}>
-      {/* LEFT SIDEBAR: Instruments */}
+      {/* LEFT SIDEBAR: Branding Header & Instruments List */}
       <aside className={styles.sidebar}>
+        {/* Brand Logo Header */}
+        <div className={styles.logoSection}>
+          <div className={styles.logoIcon}>⚡</div>
+          <div className={styles.logoTextContainer}>
+            <h1 className={styles.logoText}>VOLTAIC</h1>
+            <span className={styles.logoSubtitle}>R&S Workflow Builder</span>
+          </div>
+        </div>
+
         <h2 className={styles.sidebarTitle}>Instruments</h2>
         <div className={styles.deviceList}>
-          {devices.map((device) => (
-            <div key={device.id} className={styles.deviceCard}>
-              <span className={styles.deviceName}>{device.name}</span>
-              <span className={styles.deviceType}>{device.type}</span>
-            </div>
-          ))}
+          {devices.map((device) => {
+            const typeColor = getDeviceColor(device.type)
+            return (
+              <div key={device.id} className={styles.deviceCard}>
+                <span className={styles.deviceName}>{device.name}</span>
+                <span className={styles.deviceBadge}>
+                  <span 
+                    className={styles.badgeDot} 
+                    style={{ backgroundColor: typeColor, boxShadow: `0 0 6px ${typeColor}80` }}
+                  />
+                  {device.type}
+                </span>
+              </div>
+            )
+          })}
         </div>
       </aside>
 

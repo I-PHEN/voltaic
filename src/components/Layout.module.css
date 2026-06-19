@@ -6,6 +6,51 @@
   background-color: var(--bg-app);
 }
 
+/* BRAND LOGO SECTION */
+.logoSection {
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--border-color);
+  background: linear-gradient(180deg, rgba(0, 145, 255, 0.04) 0%, transparent 100%);
+}
+
+.logoIcon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: rgba(0, 145, 255, 0.1);
+  border: 1px solid rgba(0, 145, 255, 0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  color: var(--color-primary);
+  box-shadow: 0 0 12px rgba(0, 145, 255, 0.2);
+}
+
+.logoTextContainer {
+  display: flex;
+  flex-direction: column;
+}
+
+.logoText {
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  color: var(--color-text);
+  line-height: 1.2;
+}
+
+.logoSubtitle {
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
 /* LEFT SIDEBAR */
 .sidebar {
   width: 220px;
@@ -18,19 +63,18 @@
 }
 
 .sidebarTitle {
-  padding: 18px 16px;
-  font-size: 12px;
-  font-weight: 700;
+  padding: 16px 16px 8px 16px;
+  font-size: 10px;
+  font-weight: 800;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
   color: var(--color-text-muted);
-  border-bottom: 1px solid var(--border-color);
 }
 
 .deviceList {
   flex: 1;
   overflow-y: auto;
-  padding: 16px 12px;
+  padding: 8px 12px 16px 12px;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -42,17 +86,17 @@
   border: 1px solid var(--border-color);
   border-radius: 8px;
   cursor: pointer;
-  transition: all 0.2s ease-in-out;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 8px;
 }
 
 .deviceCard:hover {
   background-color: var(--bg-card-hover);
-  border-color: var(--color-primary);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  border-color: rgba(0, 145, 255, 0.4);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
 }
 
 .deviceCard:active {
@@ -61,18 +105,30 @@
 }
 
 .deviceName {
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 700;
   color: var(--color-text);
   letter-spacing: -0.01em;
 }
 
-.deviceType {
-  font-size: 10px;
-  font-weight: 500;
+.deviceBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 9px;
+  font-weight: 600;
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.04);
   color: var(--color-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
+  width: fit-content;
+}
+
+.badgeDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
 }
 
 /* CENTER CANVAS CONTAINER */
@@ -99,14 +155,16 @@
 
 .toolbarButton {
   padding: 7px 14px;
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
   border-radius: 6px;
   cursor: pointer;
   border: 1px solid var(--border-color);
   background-color: var(--bg-card);
   color: var(--color-text);
-  transition: all 0.15s ease-in-out;
+  transition: all 0.15s ease;
 }
 
 .toolbarButton:hover {
@@ -131,7 +189,7 @@
   position: relative;
   background-color: var(--bg-canvas);
   background-image: radial-gradient(var(--dot-color) 1.5px, transparent 1.5px);
-  background-size: 22px 22px;
+  background-size: 24px 24px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -143,28 +201,36 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 16px;
-  animation: fadeIn 0.8s ease-out;
+  gap: 14px;
+  animation: fadeIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .emptyStateIcon {
-  width: 56px;
-  height: 56px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.015);
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(0, 145, 255, 0.03) 0%, rgba(255, 255, 255, 0.01) 100%);
   border: 1px dashed var(--border-color);
   display: flex;
   align-items: center;
   justify-content: center;
   color: var(--color-primary);
-  font-size: 20px;
-  box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.2);
+  font-size: 22px;
+  box-shadow: inset 0 0 16px rgba(0, 0, 0, 0.5);
+  transition: all 0.3s ease;
+}
+
+.emptyState:hover .emptyStateIcon {
+  border-color: var(--color-primary);
+  color: var(--color-primary-hover);
+  box-shadow: 0 0 15px rgba(0, 145, 255, 0.15), inset 0 0 16px rgba(0, 0, 0, 0.5);
+  transform: scale(1.05);
 }
 
 .emptyStateText {
   font-size: 13px;
   font-weight: 500;
-  letter-spacing: 0.01em;
+  letter-spacing: 0.02em;
   color: var(--color-text-muted);
 }
 
@@ -182,10 +248,10 @@
 
 .chatTitle {
   padding: 18px 16px;
-  font-size: 12px;
-  font-weight: 700;
+  font-size: 11px;
+  font-weight: 800;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
   color: var(--color-text-muted);
   border-bottom: 1px solid var(--border-color);
   display: flex;
@@ -272,15 +338,16 @@
   color: var(--color-text);
   font-size: 13px;
   outline: none;
-  transition: border-color 0.15s ease-in-out;
+  transition: all 0.15s ease;
 }
 
 .textInput:focus {
-  border-color: var(--color-primary);
+  border-color: rgba(0, 145, 255, 0.6);
+  box-shadow: 0 0 8px rgba(0, 145, 255, 0.15);
 }
 
 .textInput::placeholder {
-  color: rgba(148, 163, 184, 0.4);
+  color: rgba(148, 163, 184, 0.25);
 }
 
 .sendButton {
@@ -289,10 +356,12 @@
   border: none;
   border-radius: 8px;
   color: #ffffff;
-  font-weight: 600;
-  font-size: 12px;
+  font-weight: 700;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
   cursor: pointer;
-  transition: background-color 0.15s ease-in-out;
+  transition: background-color 0.15s ease;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -305,7 +374,7 @@
 @keyframes fadeIn {
   from {
     opacity: 0;
-    transform: translateY(4px);
+    transform: translateY(6px);
   }
   to {
     opacity: 1;
