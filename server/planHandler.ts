@@ -1,5 +1,5 @@
 import { planSchema, type Plan } from '../src/data/planSchema'
-import { clampParams, buildDeviceCatalog } from '../src/data/deviceSchemas'
+import { clampParams, buildDeviceCatalog, deviceSchemas, type DeviceSchema } from '../src/data/deviceSchemas'
 
 export interface PlanHandlerConfig {
   apiKey: string
@@ -12,22 +12,32 @@ export interface PlanHandlerResult {
   body: { plan: Plan } | { error: string }
 }
 
+// The conversation + canvas context the assistant reasons over.
+export interface PlanContext {
+  canvas?: {
+    devices: { deviceId: string; properties: Record<string, unknown> }[]
+    connections: { from: number; to: number }[]
+  }
+  history?: { role: 'user' | 'assistant'; text: string }[]
+}
+
 type ChatMessage = { role: 'system' | 'user' | 'assistant'; content: string }
 
-const SYSTEM_RULES = `You are Voltaic's instrumentation planner for Rohde & Schwarz test benches.
-Given a measurement request, choose instruments from the catalog below and configure them.
+const SYSTEM_RULES = `You are Voltaic, a knowledgeable Rohde & Schwarz instrumentation assistant. You help an engineer build and understand a test bench. You are given the CURRENT BENCH on their canvas and the recent conversation, and you must respond to their latest message.
+
+You can do three things. Decide which fits the message:
+1. BUILD or MODIFY the bench — return the COMPLETE desired list of devices (include the devices that should stay, preserving their existing parameters exactly) and the connections between them.
+2. ANSWER a question / explain the setup / give advice / chat — return an EMPTY "devices" array and EMPTY "connections", and put your real, helpful answer in "summary". The canvas is left exactly as it is. Use genuine test-and-measurement knowledge (for example: a power supply provides DC bias to a device-under-test and is NOT wired into a function generator's signal input, so those stay on separate paths).
+3. GREET / small talk — empty devices and a short friendly summary.
 
 Rules:
-- If the message is NOT a measurement/instrumentation request — e.g. a greeting ("hello", "hi"), thanks, small talk, or anything you cannot map to a bench setup — return an EMPTY "devices" array, an empty "connections" array, and a short, friendly "summary" inviting them to describe a measurement. NEVER fabricate instruments for a non-measurement message.
-- Use ONLY the devices and parameter keys listed. Never invent devices or keys.
-- Include ONLY the instruments the request actually needs. Do NOT add a power supply (nge100) unless the request involves an amplifier, a circuit/board, or powering a device. Do NOT add a spectrum analyzer (fpc1500) unless the request mentions SNR, spectrum, harmonics, or RF power. A simple "show a waveform on the scope" needs only a function generator and an oscilloscope.
-- Parse concrete numeric values from the request (frequencies, voltages, amplitudes) and set the matching parameter. Convert units to the parameter's unit.
-- When a value is not specified, use the parameter's default.
-- Order devices in signal flow (source/supply first, measurement instrument last) and connect them with "connections" as index pairs into "devices".
-- Return ONLY a JSON object, no prose, matching exactly:
+- ALWAYS return ONLY a JSON object, no prose, matching exactly:
   { "devices": [ { "deviceId": string, "properties": object, "role": string } ], "connections": [ { "from": number, "to": number } ], "summary": string }
-- "role" is a short human sentence describing why that device is placed.
-- "summary" is a friendly one-paragraph recap for the engineer.
+- If you are only answering or chatting and the bench should NOT change, you MUST return empty "devices" and empty "connections". Do not rebuild an unchanged bench.
+- When building/modifying: use ONLY the devices and parameter keys in the catalog; never invent them. Parse concrete numbers from the message (frequencies, voltages, amplitudes) and set the matching parameter, converting units. Use defaults for anything unspecified. Preserve existing devices and their parameters unless the user asked to change them.
+- Include ONLY the instruments the task needs. Do NOT add a power supply (nge100) unless an amplifier, circuit/board, or powering a device is involved. Do NOT add a spectrum analyzer (fpc1500) unless SNR, spectrum, harmonics, or RF power is involved.
+- "connections" are index pairs into "devices", in signal-flow order (source/generator first, measurement instrument last). A power supply usually has NO connection — it biases an off-canvas device-under-test, not the signal path.
+- "role" is a short human sentence describing why each device is placed. "summary" is a friendly recap or, for an answer, your actual reply to the engineer.
 
 Device catalog:
 `
@@ -53,7 +63,15 @@ const FEW_SHOT_WAVE_ASSISTANT = JSON.stringify({
   summary: 'Set the HMF2550 generator to a 10 kHz sine wave and routed it to Channel 1 of the RTB24 oscilloscope.',
 })
 
-// Third example: a non-measurement message gets a friendly reply, no instruments.
+// Third example: a follow-up question is answered, with NO change to the bench.
+const FEW_SHOT_QA_USER = 'why is the power supply not connected to the function generator?'
+const FEW_SHOT_QA_ASSISTANT = JSON.stringify({
+  devices: [],
+  connections: [],
+  summary: "The NGE100 is a power supply — it provides DC bias to your device-under-test, not to the HMF2550. A function generator is mains-powered and produces its own signal, so the supply intentionally sits outside the signal path. The measurement chain is the generator into the oscilloscope.",
+})
+
+// Fourth example: a greeting / small talk gets a friendly reply, no instruments.
 const FEW_SHOT_CHAT_USER = 'hello'
 const FEW_SHOT_CHAT_ASSISTANT = JSON.stringify({
   devices: [],
@@ -61,17 +79,54 @@ const FEW_SHOT_CHAT_ASSISTANT = JSON.stringify({
   summary: "Hi! I'm Voltaic. Describe a measurement — for example \"view a 1 kHz sine wave on the scope\" or \"measure SNR of an amplifier at 900 MHz\" — and I'll set up the right R&S instruments for you.",
 })
 
-export function buildMessages(intent: string): ChatMessage[] {
-  return [
+// A human-readable description of the current canvas, fed to the model so it can
+// reason about and answer questions on the actual bench.
+function describeCanvas(canvas: PlanContext['canvas']): string {
+  if (!canvas || canvas.devices.length === 0) return 'Current bench: the canvas is empty.'
+  const schemas = deviceSchemas as Record<string, DeviceSchema>
+  const lines = canvas.devices.map((d, i) => {
+    const name = schemas[d.deviceId]?.name ?? d.deviceId
+    const type = schemas[d.deviceId]?.type ?? ''
+    const props = Object.entries(d.properties)
+      .map(([k, v]) => `${k}=${v}`)
+      .join(', ')
+    return `- [${i}] ${name} (${type})${props ? `: ${props}` : ''}`
+  })
+  const conns =
+    canvas.connections.length > 0
+      ? canvas.connections
+          .map((c) => {
+            const from = schemas[canvas.devices[c.from]?.deviceId]?.name ?? `#${c.from}`
+            const to = schemas[canvas.devices[c.to]?.deviceId]?.name ?? `#${c.to}`
+            return `${from} -> ${to}`
+          })
+          .join(', ')
+      : 'none'
+  return `Current bench on the canvas:\n${lines.join('\n')}\nConnections: ${conns}`
+}
+
+export function buildMessages(intent: string, context: PlanContext = {}): ChatMessage[] {
+  const messages: ChatMessage[] = [
     { role: 'system', content: SYSTEM_RULES + buildDeviceCatalog() },
     { role: 'user', content: FEW_SHOT_SNR_USER },
     { role: 'assistant', content: FEW_SHOT_SNR_ASSISTANT },
     { role: 'user', content: FEW_SHOT_WAVE_USER },
     { role: 'assistant', content: FEW_SHOT_WAVE_ASSISTANT },
+    { role: 'user', content: FEW_SHOT_QA_USER },
+    { role: 'assistant', content: FEW_SHOT_QA_ASSISTANT },
     { role: 'user', content: FEW_SHOT_CHAT_USER },
     { role: 'assistant', content: FEW_SHOT_CHAT_ASSISTANT },
-    { role: 'user', content: intent },
+    // Ground the model in the real, current bench.
+    { role: 'system', content: describeCanvas(context.canvas) },
   ]
+
+  // Replay the recent conversation so the assistant has memory.
+  for (const turn of context.history ?? []) {
+    messages.push({ role: turn.role, content: turn.text })
+  }
+
+  messages.push({ role: 'user', content: intent })
+  return messages
 }
 
 export function parseAndValidatePlan(rawContent: string): Plan {
@@ -107,9 +162,13 @@ async function callProvider(messages: ChatMessage[], config: PlanHandlerConfig):
   return data.choices?.[0]?.message?.content ?? ''
 }
 
-export async function handlePlanRequest(intent: string, config: PlanHandlerConfig): Promise<PlanHandlerResult> {
+export async function handlePlanRequest(
+  intent: string,
+  config: PlanHandlerConfig,
+  context: PlanContext = {},
+): Promise<PlanHandlerResult> {
   if (!config.apiKey) return { status: 503, body: { error: 'no_key' } }
-  const base = buildMessages(intent)
+  const base = buildMessages(intent, context)
 
   for (let attempt = 0; attempt < 2; attempt++) {
     const messages =

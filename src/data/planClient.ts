@@ -1,7 +1,16 @@
 import { planSchema, type Plan } from './planSchema'
 import { deviceSchemas } from './deviceSchemas'
 import type { WorkflowStep } from './workflow'
-import type { CanvasNode } from './scriptGenerator'
+
+// What the model is told about the current bench and conversation.
+export interface PlanCanvas {
+  devices: { deviceId: string; properties: Record<string, unknown> }[]
+  connections: { from: number; to: number }[]
+}
+export interface PlanHistoryTurn {
+  role: 'user' | 'assistant'
+  text: string
+}
 
 export function planToWorkflowSteps(plan: Plan): WorkflowStep[] {
   const steps: WorkflowStep[] = []
@@ -39,11 +48,15 @@ export function planToWorkflowSteps(plan: Plan): WorkflowStep[] {
   return steps
 }
 
-export async function fetchPlan(intent: string, currentNodes: CanvasNode[]): Promise<Plan> {
+export async function fetchPlan(
+  intent: string,
+  canvas: PlanCanvas,
+  history: PlanHistoryTurn[],
+): Promise<Plan> {
   const res = await fetch('/api/plan', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ intent, currentNodes }),
+    body: JSON.stringify({ intent, canvas, history }),
   })
   if (!res.ok) throw new Error(`plan request failed: ${res.status}`)
   const data = (await res.json()) as { plan?: unknown }

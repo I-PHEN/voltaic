@@ -14,6 +14,24 @@ describe('buildMessages', () => {
     expect(msgs[0].content).toContain('FPC1500')
     expect(msgs[msgs.length - 1].content).toContain('900 MHz')
   })
+
+  it('describes the current canvas and replays history', () => {
+    const msgs = buildMessages('why no connection?', {
+      canvas: {
+        devices: [
+          { deviceId: 'nge100', properties: { voltage: 5 } },
+          { deviceId: 'hmf2550', properties: { frequency: 25 } },
+        ],
+        connections: [],
+      },
+      history: [{ role: 'user', text: 'power a board at 5V and show a 25 kHz wave' }],
+    })
+    const all = msgs.map((m) => m.content).join('\n')
+    expect(all).toContain('NGE100')
+    expect(all).toContain('voltage=5')
+    expect(all).toContain('power a board at 5V')
+    expect(msgs[msgs.length - 1].content).toBe('why no connection?')
+  })
 })
 
 describe('parseAndValidatePlan', () => {

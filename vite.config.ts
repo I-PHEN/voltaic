@@ -18,12 +18,23 @@ function planApiPlugin(env: Record<string, string>): Plugin {
         req.on('end', async () => {
           res.setHeader('Content-Type', 'application/json; charset=utf-8')
           try {
-            const { intent } = JSON.parse(raw || '{}') as { intent?: string }
-            const result = await handlePlanRequest(intent ?? '', {
-              apiKey: env.GROQ_API_KEY || '',
-              baseUrl: env.LLM_BASE_URL || 'https://api.groq.com/openai/v1',
-              model: env.LLM_MODEL || 'openai/gpt-oss-120b',
-            })
+            const { intent, canvas, history } = JSON.parse(raw || '{}') as {
+              intent?: string
+              canvas?: {
+                devices: { deviceId: string; properties: Record<string, unknown> }[]
+                connections: { from: number; to: number }[]
+              }
+              history?: { role: 'user' | 'assistant'; text: string }[]
+            }
+            const result = await handlePlanRequest(
+              intent ?? '',
+              {
+                apiKey: env.GROQ_API_KEY || '',
+                baseUrl: env.LLM_BASE_URL || 'https://api.groq.com/openai/v1',
+                model: env.LLM_MODEL || 'openai/gpt-oss-120b',
+              },
+              { canvas, history },
+            )
             res.statusCode = result.status
             res.end(JSON.stringify(result.body))
           } catch {

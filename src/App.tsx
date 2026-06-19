@@ -955,8 +955,23 @@ function App() {
     let isConversational = false
     let summaryMessage = ''
 
+    // Snapshot the current bench + recent chat so the assistant has memory and canvas-awareness.
+    const canvas = {
+      devices: nodes.map((n) => ({ deviceId: n.deviceId, properties: n.properties })),
+      connections: connections
+        .map((c) => ({
+          from: nodes.findIndex((n) => n.id === c.fromId),
+          to: nodes.findIndex((n) => n.id === c.toId),
+        }))
+        .filter((c) => c.from !== -1 && c.to !== -1),
+    }
+    const history = messages
+      .filter((m) => m.text && m.text.trim().length > 0)
+      .slice(-8)
+      .map((m) => ({ role: m.sender, text: m.text }))
+
     try {
-      const plan = await fetchPlan(intentText, nodes)
+      const plan = await fetchPlan(intentText, canvas, history)
       if (!plan.devices || plan.devices.length === 0) {
         isConversational = true
         summaryMessage = plan.summary

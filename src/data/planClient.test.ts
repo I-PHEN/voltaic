@@ -47,14 +47,28 @@ describe('planToWorkflowSteps', () => {
 describe('fetchPlan', () => {
   afterEach(() => vi.unstubAllGlobals())
 
+  const emptyCanvas = { devices: [], connections: [] }
+
   it('returns the parsed plan on success', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ plan }), { status: 200 })))
-    const result = await fetchPlan('measure 2 kHz wave', [])
+    const result = await fetchPlan('measure 2 kHz wave', emptyCanvas, [])
     expect(result.devices).toHaveLength(2)
+  })
+
+  it('sends intent, canvas, and history in the request body', async () => {
+    const fetchMock = vi.fn((_url: string, _init?: RequestInit) =>
+      Promise.resolve(new Response(JSON.stringify({ plan }), { status: 200 })),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const canvas = { devices: [{ deviceId: 'nge100', properties: { voltage: 5 } }], connections: [] }
+    const history = [{ role: 'user' as const, text: 'power a board at 5V' }]
+    await fetchPlan('why no connection?', canvas, history)
+    const body = JSON.parse(fetchMock.mock.calls[0][1]!.body as string)
+    expect(body).toEqual({ intent: 'why no connection?', canvas, history })
   })
 
   it('throws on a non-200 response', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: 'no_key' }), { status: 503 })))
-    await expect(fetchPlan('x', [])).rejects.toThrow()
+    await expect(fetchPlan('x', emptyCanvas, [])).rejects.toThrow()
   })
 })
