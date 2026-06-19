@@ -5,6 +5,7 @@ import inspectorStyles from './components/Inspector.module.css'
 import { devices } from './data/devices'
 import { generateWorkflowSteps, type WorkflowStep } from './data/workflow'
 import { generateScriptAndChecklist, generateSCPITerminalLogs, type SCPILogLine } from './data/scriptGenerator'
+import { fetchPlan, planToWorkflowSteps } from './data/planClient'
 
 interface CanvasNode {
   id: string;
@@ -659,10 +660,19 @@ function App() {
     })
   }
 
-  // Mock AI Intent processing
-  const processIntent = (intentText: string) => {
-    const steps = generateWorkflowSteps(intentText)
-    
+  // AI Intent processing: try the LLM planner, fall back to the keyword matcher.
+  const processIntent = async (intentText: string) => {
+    setIsTyping(true)
+
+    let steps: WorkflowStep[]
+    try {
+      const plan = await fetchPlan(intentText, nodes)
+      steps = planToWorkflowSteps(plan)
+    } catch (err) {
+      console.warn('AI planner unavailable, using offline planner:', err)
+      steps = generateWorkflowSteps(intentText)
+    }
+
     // Clear canvas before placing new device layouts to prevent overlapping coordinates
     const hasAdditions = steps.some((s) => s.type === 'add_device')
     if (hasAdditions) {
