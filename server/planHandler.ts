@@ -50,7 +50,12 @@ Rules:
 - ALWAYS return ONLY a JSON object, no prose, matching exactly:
   { "devices": [ { "deviceId": string, "properties": object, "role": string } ], "connections": [ { "from": number, "to": number } ], "summary": string }
 - If you are only answering or chatting and the bench should NOT change, you MUST return empty "devices" and empty "connections". Do not rebuild an unchanged bench.
-- When building/modifying: use ONLY the devices and parameter keys in the catalog; never invent them. Parse concrete numbers from the message (frequencies, voltages, amplitudes) and set the matching parameter, converting units. Use defaults for anything unspecified. Preserve existing devices and their parameters unless the user asked to change them.
+- When building/modifying: use ONLY the devices and parameter keys in the catalog; never invent them. Parse concrete numbers from the message (frequencies, voltages, amplitudes) and set the matching parameter. Use defaults for anything unspecified. Preserve existing devices and their parameters unless the user asked to change them.
+- UNIT CONVERSION IS CRITICAL — each parameter has a FIXED unit (shown in the catalog); always convert the user's stated value into THAT unit before setting it, never copy the raw number across units:
+  • HMF2550 "frequency" is in kHz. A value given in MHz MUST be multiplied by 1000 (1 MHz = 1000 kHz, 2 MHz = 2000 kHz, 10 MHz = 10000 kHz); a value in Hz divided by 1000. A value already in kHz is used as-is.
+  • FPC1500 "centerFreq"/"span" are in MHz. A value given in GHz MUST be multiplied by 1000 (2.4 GHz = 2400 MHz); a value in kHz divided by 1000.
+  • RTB24 "timebase" is in ms; convert seconds (×1000) or µs (÷1000) accordingly.
+  • Even when two instruments observe the SAME signal, each takes the value in ITS OWN unit (a 10 MHz signal → HMF2550 frequency=10000, FPC1500 centerFreq=10).
 - Include ONLY the instruments the task needs. Do NOT add a power supply (nge100) unless an amplifier, circuit/board, or powering a device is involved. Do NOT add a spectrum analyzer (fpc1500) unless SNR, spectrum, harmonics, or RF power is involved.
 - "connections" are index pairs into "devices", in signal-flow order (source/generator first, measurement instrument last). A power supply usually has NO connection — it biases an off-canvas device-under-test, not the signal path.
 - "role" is a short human sentence describing why each device is placed. "summary" is a friendly recap or, for an answer, your actual reply to the engineer.
@@ -90,7 +95,18 @@ const FEW_SHOT_MEASURE_ASSISTANT = JSON.stringify({
   summary: "Built the bench: the HMF2550 drives a 10 kHz sine wave into Channel 1 of the RTB24. Enable the scope's measurement functions to read frequency, Vpp, RMS, and period on CH1.",
 })
 
-// Fourth example: a follow-up question is answered, with NO change to the bench.
+// Fourth example: an MHz frequency on the function generator must convert to kHz.
+const FEW_SHOT_FG_MHZ_USER = 'drive a 2 MHz sine wave into the oscilloscope'
+const FEW_SHOT_FG_MHZ_ASSISTANT = JSON.stringify({
+  devices: [
+    { deviceId: 'hmf2550', properties: { frequency: 2000, amplitude: 2 }, role: 'Generate a 2 MHz (2000 kHz) sine wave.' },
+    { deviceId: 'rtb24', properties: { ch1Scale: 0.5, timebase: 0.0002, trigger: 'CH1' }, role: 'Display the 2 MHz waveform on Channel 1.' },
+  ],
+  connections: [{ from: 0, to: 1 }],
+  summary: 'The HMF2550 generates a 2 MHz sine wave (2000 kHz) routed to Channel 1 of the RTB24 oscilloscope.',
+})
+
+// Fifth example: a follow-up question is answered, with NO change to the bench.
 const FEW_SHOT_QA_USER = 'why is the power supply not connected to the function generator?'
 const FEW_SHOT_QA_ASSISTANT = JSON.stringify({
   devices: [],
@@ -141,6 +157,8 @@ export function buildMessages(intent: string, context: PlanContext = {}): ChatMe
     { role: 'assistant', content: FEW_SHOT_WAVE_ASSISTANT },
     { role: 'user', content: FEW_SHOT_MEASURE_USER },
     { role: 'assistant', content: FEW_SHOT_MEASURE_ASSISTANT },
+    { role: 'user', content: FEW_SHOT_FG_MHZ_USER },
+    { role: 'assistant', content: FEW_SHOT_FG_MHZ_ASSISTANT },
     { role: 'user', content: FEW_SHOT_QA_USER },
     { role: 'assistant', content: FEW_SHOT_QA_ASSISTANT },
     { role: 'user', content: FEW_SHOT_CHAT_USER },
