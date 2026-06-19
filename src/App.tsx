@@ -84,11 +84,20 @@ function App() {
   
   const messageEndRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLDivElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   // Scroll to bottom of chat
   useEffect(() => {
     messageEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, isTyping])
+
+  // Auto-expand textarea height on input changes
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto'
+      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`
+    }
+  }, [chatInput])
 
   // Global key listener to delete selected node
   useEffect(() => {
@@ -1246,9 +1255,6 @@ if __name__ == "__main__":
                     msg.sender === 'user' ? styles.messageUser : styles.messageAssistant
                   }`}
                 >
-                  <span className={styles.messageSender}>
-                    {msg.sender === 'user' ? 'User' : 'Assistant'}
-                  </span>
                   <div
                     className={`${styles.messageBubble} ${
                       msg.sender === 'user' ? styles.bubbleUser : styles.bubbleAssistant
@@ -1263,7 +1269,6 @@ if __name__ == "__main__":
               {/* Typing indicator */}
               {isTyping && (
                 <div className={`${styles.messageItem} ${styles.messageAssistant}`}>
-                  <span className={styles.messageSender}>Assistant</span>
                   <div className={`${styles.messageBubble} ${styles.bubbleAssistant}`} style={{ display: 'flex', gap: '3px', padding: '10px 14px' }}>
                     <span style={{ width: '4px', height: '4px', background: '#888', borderRadius: '50%', animation: 'bounce 0.6s infinite alternate' }} />
                     <span style={{ width: '4px', height: '4px', background: '#888', borderRadius: '50%', animation: 'bounce 0.6s infinite alternate 0.2s' }} />
@@ -1274,25 +1279,25 @@ if __name__ == "__main__":
               
               {/* Suggestion Chips */}
               {!isTyping && messages.length === 1 && (
-                <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', padding: '8px 0' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '8px 0' }}>
                   <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', paddingLeft: '4px' }}>
                     Suggestions
                   </span>
                   <button
-                    onClick={() => handleSuggestionClick('measure SNR of amplifier')}
+                    onClick={() => handleSuggestionClick('Measure SNR of amplifier at 500 MHz')}
                     style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--color-text)', borderRadius: '6px', padding: '8px 10px', fontSize: '12px', textAlign: 'left', cursor: 'pointer', outline: 'none', transition: 'all 0.15s' }}
                     onMouseOver={(e) => { e.currentTarget.style.borderColor = '#383838'; e.currentTarget.style.backgroundColor = 'var(--bg-card-hover)'; }}
                     onMouseOut={(e) => { e.currentTarget.style.borderColor = 'var(--border-color)'; e.currentTarget.style.backgroundColor = 'var(--bg-card)'; }}
                   >
-                    ⚡ "measure SNR of amplifier at 500 MHz"
+                    Measure SNR of amplifier at 500 MHz
                   </button>
                   <button
-                    onClick={() => handleSuggestionClick('measure sine wave parameters')}
+                    onClick={() => handleSuggestionClick('Measure 10 kHz sine wave parameters')}
                     style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--color-text)', borderRadius: '6px', padding: '8px 10px', fontSize: '12px', textAlign: 'left', cursor: 'pointer', outline: 'none', transition: 'all 0.15s' }}
                     onMouseOver={(e) => { e.currentTarget.style.borderColor = '#383838'; e.currentTarget.style.backgroundColor = 'var(--bg-card-hover)'; }}
                     onMouseOut={(e) => { e.currentTarget.style.borderColor = 'var(--border-color)'; e.currentTarget.style.backgroundColor = 'var(--bg-card)'; }}
                   >
-                    ⚡ "measure 10 kHz sine wave parameters"
+                    Measure 10 kHz sine wave parameters
                   </button>
                 </div>
               )}
@@ -1301,12 +1306,19 @@ if __name__ == "__main__":
             </div>
             
             <form onSubmit={handleSend} className={styles.unifiedInputWrapper}>
-              <input
-                type="text"
+              <textarea
+                ref={textareaRef}
                 className={styles.unifiedTextInput}
                 placeholder="Describe a measurement flow..."
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSend(e);
+                  }
+                }}
+                rows={1}
               />
               <div className={styles.inputActionContainer}>
                 <button
@@ -1315,7 +1327,11 @@ if __name__ == "__main__":
                   onClick={toggleSpeech}
                   title={isListening ? 'Stop listening' : 'Start voice mode'}
                 >
-                  🎙️
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+                    <path d="M19 10v1a7 7 0 0 1-14 0v-1"/>
+                    <line x1="12" y1="19" x2="12" y2="22"/>
+                  </svg>
                 </button>
                 <button
                   type="submit"
@@ -1324,8 +1340,8 @@ if __name__ == "__main__":
                   title="Send message"
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <line x1="22" y1="2" x2="11" y2="13"></line>
-                    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                    <polyline points="12 5 19 12 12 19"></polyline>
                   </svg>
                 </button>
               </div>

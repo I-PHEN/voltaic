@@ -61,7 +61,7 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1), min-width 0.3s cubic-bezier(0.16, 1, 0.3, 1), border-width 0.3s;
+  transition: width 0.4s cubic-bezier(0.16, 1, 0.3, 1), min-width 0.4s cubic-bezier(0.16, 1, 0.3, 1), border-width 0.4s;
 }
 
 .sidebarTitle {
@@ -274,7 +274,7 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1), min-width 0.3s cubic-bezier(0.16, 1, 0.3, 1), border-width 0.3s;
+  transition: width 0.4s cubic-bezier(0.16, 1, 0.3, 1), min-width 0.4s cubic-bezier(0.16, 1, 0.3, 1), border-width 0.4s;
 }
 
 .chatTitle {
@@ -458,8 +458,7 @@
 }
 
 .messageBubble {
-  padding: 10px 12px;
-  border-radius: 10px;
+  padding: 12px 16px;
   font-size: 13px;
   line-height: 1.5;
   word-wrap: break-word;
@@ -469,13 +468,13 @@
   background-color: var(--bg-card);
   border: 1px solid var(--border-color);
   color: var(--color-text);
-  border-top-left-radius: 2px;
+  border-radius: 16px 16px 16px 4px;
 }
 
 .bubbleUser {
   background-color: var(--color-primary);
   color: #ffffff;
-  border-top-right-radius: 2px;
+  border-radius: 16px 16px 4px 16px;
 }
 
 .inputArea {
@@ -488,12 +487,12 @@
 
 .unifiedInputWrapper {
   margin: 14px 16px 18px 16px;
-  padding: 6px 6px 6px 14px;
+  padding: 8px 8px 8px 14px;
   background-color: var(--bg-canvas);
   border: 1px solid var(--border-color);
   border-radius: 12px;
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 8px;
   transition: all 0.2s ease;
 }
@@ -512,6 +511,11 @@
   font-size: 13px;
   line-height: 1.5;
   padding: 4px 0;
+  resize: none;
+  height: 20px;
+  max-height: 120px;
+  overflow-y: auto;
+  font-family: inherit;
 }
 
 .unifiedTextInput::placeholder {
