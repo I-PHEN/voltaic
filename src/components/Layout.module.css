@@ -474,10 +474,10 @@
 }
 
 .bubbleUser {
-  background-color: #0084ff;
-  color: #ffffff;
-  border-radius: 16px 16px 4px 16px;
-  box-shadow: 0 4px 12px rgba(0, 132, 255, 0.2);
+  background-color: #2a2a30;
+  color: var(--color-text);
+  border-radius: 18px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
 .inputArea {
