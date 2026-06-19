@@ -24,6 +24,7 @@ interface Message {
   id: string;
   sender: 'user' | 'assistant';
   text: string;
+  timestamp: string;
 }
 
 const getDeviceColor = (type: string) => {
@@ -45,13 +46,24 @@ const getDeviceColor = (type: string) => {
   }
 }
 
+const getFormattedTime = () => {
+  const now = new Date()
+  let hours = now.getHours()
+  const minutes = now.getMinutes().toString().padStart(2, '0')
+  const ampm = hours >= 12 ? 'PM' : 'AM'
+  hours = hours % 12
+  hours = hours ? hours : 12
+  return `${hours}:${minutes} ${ampm}`
+}
+
 function App() {
   const [chatInput, setChatInput] = useState('')
   const [messages, setMessages] = useState<Message[]>([
     {
       id: 'welcome',
       sender: 'assistant',
-      text: "Hi! Describe a measurement and I'll build the workflow for you."
+      text: "Hi! Describe a measurement and I'll build the workflow for you.",
+      timestamp: getFormattedTime()
     }
   ])
   const [isTyping, setIsTyping] = useState(false)
@@ -60,6 +72,10 @@ function App() {
   
   // Selection states
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
+  
+  // Voice state
+  const [isListening, setIsListening] = useState(false)
+  const recognitionRef = useRef<any>(null)
   
   const messageEndRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLDivElement>(null)
@@ -95,7 +111,8 @@ function App() {
       {
         id: 'welcome',
         sender: 'assistant',
-        text: "Hi! Describe a measurement and I'll build the workflow for you."
+        text: "Hi! Describe a measurement and I'll build the workflow for you.",
+        timestamp: getFormattedTime()
       }
     ])
     handleClear()
@@ -127,6 +144,79 @@ function App() {
     )
   }
 
+  // Copy Code to Clipboard
+  const handleCopyCode = (codeText: string) => {
+    navigator.clipboard.writeText(codeText).then(() => {
+      alert("SCPI Calibration Script copied to clipboard!")
+    }).catch((err) => {
+      console.error("Failed to copy code: ", err)
+    })
+  }
+
+  // Download Code to .py File
+  const handleDownloadCode = (codeText: string) => {
+    const blob = new Blob([codeText], { type: 'text/plain' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'voltaic_calibration.py'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  // Speech Recognition Toggle
+  const toggleSpeech = () => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+    if (!SpeechRecognition) {
+      alert("Speech recognition is not supported in this browser. Please use Chrome, Edge, or Safari.")
+      return
+    }
+
+    if (isListening) {
+      recognitionRef.current?.stop()
+      setIsListening(false)
+      return
+    }
+
+    const rec = new SpeechRecognition()
+    rec.continuous = false
+    rec.interimResults = false
+    rec.lang = 'en-US'
+
+    rec.onstart = () => {
+      setIsListening(true)
+    }
+
+    rec.onresult = (e: any) => {
+      const transcript = e.results[0][0].transcript
+      if (transcript) {
+        setChatInput(transcript)
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `user_${Date.now()}`,
+            sender: 'user',
+            text: transcript,
+            timestamp: getFormattedTime()
+          }
+        ])
+        processIntent(transcript)
+      }
+    }
+
+    rec.onerror = (e: any) => {
+      console.error("Speech recognition error:", e.error)
+      setIsListening(false)
+    }
+
+    rec.onend = () => {
+      setIsListening(false)
+    }
+
+    recognitionRef.current = rec
+    rec.start()
+  }
+
   // Run Parameter Limits Validation
   const handleValidate = () => {
     if (nodes.length === 0) {
@@ -135,7 +225,8 @@ function App() {
         {
           id: `val_${Date.now()}`,
           sender: 'assistant',
-          text: "⚠️ **Calibration Validation Failed:**\n\nCanvas is empty. Add instruments before validating."
+          text: "⚠️ **Calibration Validation Failed:**\n\nCanvas is empty. Add instruments before validating.",
+          timestamp: getFormattedTime()
         }
       ])
       return
@@ -187,7 +278,8 @@ function App() {
         {
           id: `val_${Date.now()}`,
           sender: 'assistant',
-          text: `⚠️ **Calibration Validation Failed:**\n\n${report.join('\n')}\n\n*Fix these parameters in the Inspector before generating the python calibration script.*`
+          text: `⚠️ **Calibration Validation Failed:**\n\n${report.join('\n')}\n\n*Fix these parameters in the Inspector before generating the python calibration script.*`,
+          timestamp: getFormattedTime()
         }
       ])
     } else {
@@ -196,7 +288,8 @@ function App() {
         {
           id: `val_${Date.now()}`,
           sender: 'assistant',
-          text: "✅ **Calibration Validation Succeeded:**\n\n- All instrument parameters are within safe hardware thresholds.\n- Virtual ports are successfully linked.\n\n*Workbench is ready to compile python SCPI script.*"
+          text: "✅ **Calibration Validation Succeeded:**\n\n- All instrument parameters are within safe hardware thresholds.\n- Virtual ports are successfully linked.\n\n*Ready to compile python SCPI script.*",
+          timestamp: getFormattedTime()
         }
       ])
     }
@@ -210,7 +303,8 @@ function App() {
         {
           id: `script_${Date.now()}`,
           sender: 'assistant',
-          text: "⚠️ **Script Generation Failed:**\n\nCanvas is empty. Describe a calibration flow to start."
+          text: "⚠️ **Script Generation Failed:**\n\nCanvas is empty. Describe a calibration flow to start.",
+          timestamp: getFormattedTime()
         }
       ])
       return
@@ -314,7 +408,8 @@ if __name__ == "__main__":
       {
         id: `script_${Date.now()}`,
         sender: 'assistant',
-        text: `💻 **Generated Python SCPI Script:**\n\n\`\`\`python\n${code}\n\`\`\`\n\n${checklist}`
+        text: `💻 **Generated Python SCPI Script:**\n\n\`\`\`python\n${code}\n\`\`\`\n\n${checklist}`,
+        timestamp: getFormattedTime()
       }
     ])
   }
@@ -365,7 +460,8 @@ if __name__ == "__main__":
           {
             id: `reply_${Date.now()}`,
             sender: 'assistant',
-            text: "I've analyzed your request and placed the NGE100 Power Supply (connected to power the amplifier at 12V) and the FPC1500 Spectrum Analyzer (configured to a span of 10 MHz centered at 500 MHz) on the canvas. Click on the cards to inspect or edit parameters."
+            text: "I've analyzed your request and placed the NGE100 Power Supply (connected to power the amplifier at 12V) and the FPC1500 Spectrum Analyzer (configured to a span of 10 MHz centered at 500 MHz) on the canvas. Click on the cards to inspect or edit parameters.",
+            timestamp: getFormattedTime()
           }
         ])
       } else if (cleanedText.includes('sine') || cleanedText.includes('wave') || cleanedText.includes('oscilloscope') || cleanedText.includes('waveform')) {
@@ -406,7 +502,8 @@ if __name__ == "__main__":
           {
             id: `reply_${Date.now()}`,
             sender: 'assistant',
-            text: "I've set up the function generator to supply a 10 kHz sine wave and linked it to Channel 1 of the RTB24 Oscilloscope. Visual parameters are loaded on the screen. Select a card to edit."
+            text: "I've set up the function generator to supply a 10 kHz sine wave and linked it to Channel 1 of the RTB24 Oscilloscope. Visual parameters are loaded on the screen. Select a card to edit.",
+            timestamp: getFormattedTime()
           }
         ])
       } else if (cleanedText.includes('clear') || cleanedText.includes('reset')) {
@@ -416,7 +513,8 @@ if __name__ == "__main__":
           {
             id: `reply_${Date.now()}`,
             sender: 'assistant',
-            text: "Workflow canvas cleared successfully. Let me know what you want to measure next!"
+            text: "Workflow canvas cleared successfully. Let me know what you want to measure next!",
+            timestamp: getFormattedTime()
           }
         ])
       } else {
@@ -425,7 +523,8 @@ if __name__ == "__main__":
           {
             id: `reply_${Date.now()}`,
             sender: 'assistant',
-            text: "I couldn't identify a hardware plan for that request. Try sending one of the suggestions below to populate the workbench canvas!"
+            text: "I couldn't identify a hardware plan for that request. Try sending one of the suggestions below to populate the workbench canvas!",
+            timestamp: getFormattedTime()
           }
         ])
       }
@@ -442,7 +541,8 @@ if __name__ == "__main__":
       {
         id: `user_${Date.now()}`,
         sender: 'user',
-        text: userMsg
+        text: userMsg,
+        timestamp: getFormattedTime()
       }
     ])
     setChatInput('')
@@ -455,7 +555,8 @@ if __name__ == "__main__":
       {
         id: `user_${Date.now()}`,
         sender: 'user',
-        text: suggestion
+        text: suggestion,
+        timestamp: getFormattedTime()
       }
     ])
     processIntent(suggestion)
@@ -489,24 +590,46 @@ if __name__ == "__main__":
       if (index % 2 === 1) {
         const codeContent = part.replace(/^(python|bash|javascript|json|html)\n/, '')
         return (
-          <pre
-            key={index}
-            style={{
-              backgroundColor: '#0a0a0c',
-              border: '1px solid #222',
-              borderRadius: '6px',
-              padding: '10px 12px',
-              margin: '10px 0',
-              overflowX: 'auto',
-              fontFamily: 'var(--font-mono)',
-              fontSize: '11px',
-              lineHeight: '1.4',
-              color: '#d19a66',
-              whiteSpace: 'pre'
-            }}
-          >
-            <code>{codeContent}</code>
-          </pre>
+          <div key={index} style={{ margin: '8px 0' }}>
+            <div className={styles.codeHeader}>
+              <span>Python SCPI</span>
+              <div className={styles.codeActions}>
+                <button
+                  type="button"
+                  className={styles.codeActionBtn}
+                  onClick={() => handleCopyCode(codeContent)}
+                >
+                  Copy
+                </button>
+                <button
+                  type="button"
+                  className={styles.codeActionBtn}
+                  onClick={() => handleDownloadCode(codeContent)}
+                >
+                  Download
+                </button>
+              </div>
+            </div>
+            <pre
+              style={{
+                backgroundColor: '#0a0a0c',
+                border: '1px solid var(--border-color)',
+                borderTop: 'none',
+                borderBottomLeftRadius: '8px',
+                borderBottomRightRadius: '8px',
+                padding: '10px 12px',
+                margin: 0,
+                overflowX: 'auto',
+                fontFamily: 'var(--font-mono)',
+                fontSize: '11px',
+                lineHeight: '1.4',
+                color: '#d19a66',
+                whiteSpace: 'pre'
+              }}
+            >
+              <code>{codeContent}</code>
+            </pre>
+          </div>
         )
       }
 
@@ -1023,6 +1146,7 @@ if __name__ == "__main__":
                   >
                     {renderMessageText(msg.text)}
                   </div>
+                  <span className={styles.messageTimestamp}>{msg.timestamp}</span>
                 </div>
               ))}
               
@@ -1067,6 +1191,14 @@ if __name__ == "__main__":
             </div>
             
             <form onSubmit={handleSend} className={styles.inputArea}>
+              <button
+                type="button"
+                className={`${styles.micButton} ${isListening ? styles.micButtonActive : ''}`}
+                onClick={toggleSpeech}
+                title={isListening ? 'Stop listening' : 'Start voice mode'}
+              >
+                🎙️
+              </button>
               <input
                 type="text"
                 className={styles.textInput}
