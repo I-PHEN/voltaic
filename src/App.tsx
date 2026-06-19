@@ -980,14 +980,25 @@ function App() {
       }
     } catch (err) {
       console.warn('AI planner unavailable, using offline planner:', err)
+      const rateLimited = err instanceof Error && err.message === 'rate_limited'
+      const note = rateLimited
+        ? '⚠️ The AI is briefly rate-limited — showing an offline result. Try again in a moment for the full AI plan.'
+        : ''
       const offlineSteps = generateWorkflowSteps(intentText)
-      
+
       const hasDevices = offlineSteps.some((s) => s.type === 'add_device')
       if (!hasDevices) {
         isConversational = true
         const summaryStep = offlineSteps.find((s) => s.type === 'summary')
-        summaryMessage = summaryStep?.payload?.summaryText || "I couldn't identify a hardware plan for that request."
+        const base = summaryStep?.payload?.summaryText || "I couldn't identify a hardware plan for that request."
+        summaryMessage = note ? `${note}\n\n${base}` : base
       } else {
+        if (note) {
+          const summaryStep = offlineSteps.find((s) => s.type === 'summary')
+          if (summaryStep?.payload) {
+            summaryStep.payload.summaryText = `${note}\n\n${summaryStep.payload.summaryText ?? ''}`
+          }
+        }
         steps = offlineSteps
       }
     }

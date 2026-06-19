@@ -5,7 +5,20 @@ export interface PlanHandlerConfig {
   apiKey: string
   baseUrl: string
   model: string
+  // Backoff delays (ms) for retrying provider rate limits (429). Defaults applied if omitted.
+  retryDelaysMs?: number[]
 }
+
+// Thrown when the provider keeps returning 429 after the backoff retries are exhausted.
+export class RateLimitError extends Error {
+  constructor() {
+    super('rate_limited')
+    this.name = 'RateLimitError'
+  }
+}
+
+const DEFAULT_RETRY_DELAYS_MS = [500, 1200]
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 export interface PlanHandlerResult {
   status: number
@@ -163,19 +176,33 @@ export function parseAndValidatePlan(rawContent: string): Plan {
 }
 
 async function callProvider(messages: ChatMessage[], config: PlanHandlerConfig): Promise<string> {
-  const res = await fetch(`${config.baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
-    body: JSON.stringify({
-      model: config.model,
-      temperature: 0.2,
-      response_format: { type: 'json_object' },
-      messages,
-    }),
-  })
-  if (!res.ok) throw new Error(`provider ${res.status}`)
-  const data = (await res.json()) as { choices?: { message?: { content?: string } }[] }
-  return data.choices?.[0]?.message?.content ?? ''
+  const delays = config.retryDelaysMs ?? DEFAULT_RETRY_DELAYS_MS
+
+  // Retry transient rate limits (429) with backoff; rate limits usually clear within ~1s.
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(`${config.baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
+      body: JSON.stringify({
+        model: config.model,
+        temperature: 0.2,
+        response_format: { type: 'json_object' },
+        messages,
+      }),
+    })
+
+    if (res.status === 429) {
+      if (attempt < delays.length) {
+        await sleep(delays[attempt])
+        continue
+      }
+      throw new RateLimitError()
+    }
+
+    if (!res.ok) throw new Error(`provider ${res.status}`)
+    const data = (await res.json()) as { choices?: { message?: { content?: string } }[] }
+    return data.choices?.[0]?.message?.content ?? ''
+  }
 }
 
 export async function handlePlanRequest(
@@ -195,7 +222,9 @@ export async function handlePlanRequest(
       const content = await callProvider(messages, config)
       const plan = parseAndValidatePlan(content)
       return { status: 200, body: { plan } }
-    } catch {
+    } catch (e) {
+      // A sustained rate limit is distinct from a bad plan — surface it so the UI can say so.
+      if (e instanceof RateLimitError) return { status: 429, body: { error: 'rate_limited' } }
       if (attempt === 1) return { status: 422, body: { error: 'invalid_plan' } }
     }
   }

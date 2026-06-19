@@ -95,4 +95,26 @@ describe('handlePlanRequest', () => {
     expect(res.status).toBe(422)
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
+
+  it('retries a 429 with backoff then succeeds', async () => {
+    let calls = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        calls += 1
+        if (calls === 1) return new Response('rate', { status: 429 })
+        return new Response(JSON.stringify({ choices: [{ message: { content: rawPlan } }] }), { status: 200 })
+      }),
+    )
+    const res = await handlePlanRequest('power it', { ...config, retryDelaysMs: [0] })
+    expect(res.status).toBe(200)
+    expect(calls).toBe(2)
+  })
+
+  it('returns 429 rate_limited when the provider keeps rate limiting', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('rate', { status: 429 })))
+    const res = await handlePlanRequest('x', { ...config, retryDelaysMs: [0] })
+    expect(res.status).toBe(429)
+    expect(res.body).toEqual({ error: 'rate_limited' })
+  })
 })

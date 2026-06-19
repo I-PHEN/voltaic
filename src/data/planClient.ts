@@ -58,6 +58,7 @@ export async function fetchPlan(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ intent, canvas, history }),
   })
+  if (res.status === 429) throw new Error('rate_limited')
   if (!res.ok) throw new Error(`plan request failed: ${res.status}`)
   const data = (await res.json()) as { plan?: unknown }
   return planSchema.parse(data.plan)
