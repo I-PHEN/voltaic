@@ -1267,23 +1267,23 @@ if __name__ == "__main__":
                 
                 {/* Suggestion Chips */}
                 {!isTyping && messages.length === 0 && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '8px 0' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '8px 0', alignItems: 'flex-start' }}>
                     <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', paddingLeft: '4px' }}>
                       Suggestions
                     </span>
                     <button
                       onClick={() => handleSuggestionClick('Measure SNR of amplifier at 500 MHz')}
-                      style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--color-text)', borderRadius: '6px', padding: '8px 10px', fontSize: '12px', textAlign: 'left', cursor: 'pointer', outline: 'none', transition: 'all 0.15s' }}
-                      onMouseOver={(e) => { e.currentTarget.style.borderColor = '#383838'; e.currentTarget.style.backgroundColor = 'var(--bg-card-hover)'; }}
-                      onMouseOut={(e) => { e.currentTarget.style.borderColor = 'var(--border-color)'; e.currentTarget.style.backgroundColor = 'var(--bg-card)'; }}
+                      style={{ background: '#222226', border: '1px solid #303038', color: 'var(--color-text)', borderRadius: '18px', padding: '8px 16px', fontSize: '12px', textAlign: 'left', cursor: 'pointer', outline: 'none', transition: 'all 0.15s' }}
+                      onMouseOver={(e) => { e.currentTarget.style.borderColor = '#444450'; e.currentTarget.style.backgroundColor = 'var(--bg-card-hover)'; }}
+                      onMouseOut={(e) => { e.currentTarget.style.borderColor = '#303038'; e.currentTarget.style.backgroundColor = '#222226'; }}
                     >
                       Measure SNR of amplifier at 500 MHz
                     </button>
                     <button
                       onClick={() => handleSuggestionClick('Measure 10 kHz sine wave parameters')}
-                      style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--color-text)', borderRadius: '6px', padding: '8px 10px', fontSize: '12px', textAlign: 'left', cursor: 'pointer', outline: 'none', transition: 'all 0.15s' }}
-                      onMouseOver={(e) => { e.currentTarget.style.borderColor = '#383838'; e.currentTarget.style.backgroundColor = 'var(--bg-card-hover)'; }}
-                      onMouseOut={(e) => { e.currentTarget.style.borderColor = 'var(--border-color)'; e.currentTarget.style.backgroundColor = 'var(--bg-card)'; }}
+                      style={{ background: '#222226', border: '1px solid #303038', color: 'var(--color-text)', borderRadius: '18px', padding: '8px 16px', fontSize: '12px', textAlign: 'left', cursor: 'pointer', outline: 'none', transition: 'all 0.15s' }}
+                      onMouseOver={(e) => { e.currentTarget.style.borderColor = '#444450'; e.currentTarget.style.backgroundColor = 'var(--bg-card-hover)'; }}
+                      onMouseOut={(e) => { e.currentTarget.style.borderColor = '#303038'; e.currentTarget.style.backgroundColor = '#222226'; }}
                     >
                       Measure 10 kHz sine wave parameters
                     </button>
