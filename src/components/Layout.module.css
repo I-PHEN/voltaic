@@ -191,9 +191,6 @@
   background-color: var(--bg-canvas);
   background-image: radial-gradient(var(--dot-color) 1.5px, transparent 1.5px);
   background-size: 24px 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   overflow: hidden;
 }
 
@@ -202,15 +199,30 @@
   box-shadow: inset 0 0 40px rgba(0, 145, 255, 0.03);
 }
 
+/* SVG CONNECTIONS OVERLAY */
+.connectionsSvg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 5;
+}
+
 /* EMPTY STATE DASHED CARD */
 .emptyState {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
   text-align: center;
   color: var(--color-text-muted);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  width: 200px;
+  width: 220px;
   height: 140px;
   border: 1.5px dashed var(--border-color);
   border-radius: 12px;
@@ -219,6 +231,7 @@
   padding: 16px;
   user-select: none;
   animation: fadeIn 0.4s ease-out;
+  z-index: 1;
 }
 
 .emptyStateIcon {
@@ -388,10 +401,10 @@
 @keyframes fadeIn {
   from {
     opacity: 0;
-    transform: translateY(4px);
+    transform: translate(-50%, -46%);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: translate(-50%, -50%);
   }
 }
