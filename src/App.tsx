@@ -191,16 +191,6 @@ function App() {
       const transcript = e.results[0][0].transcript
       if (transcript) {
         setChatInput(transcript)
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `user_${Date.now()}`,
-            sender: 'user',
-            text: transcript,
-            timestamp: getFormattedTime()
-          }
-        ])
-        processIntent(transcript)
       }
     }
 
@@ -1332,15 +1322,22 @@ if __name__ == "__main__":
                     </svg>
                   </button>
                   <button
-                    type="submit"
+                    type={isTyping ? "button" : "submit"}
                     className={styles.integratedSendBtn}
-                    disabled={!chatInput.trim()}
-                    title="Send message"
+                    onClick={isTyping ? () => setIsTyping(false) : undefined}
+                    disabled={!isTyping && !chatInput.trim()}
+                    title={isTyping ? "Stop generating" : "Send message"}
                   >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <line x1="5" y1="12" x2="19" y2="12"></line>
-                      <polyline points="12 5 19 12 12 19"></polyline>
-                    </svg>
+                    {isTyping ? (
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                        <rect x="4" y="4" width="16" height="16" rx="2" />
+                      </svg>
+                    ) : (
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                        <polyline points="12 5 19 12 12 19"></polyline>
+                      </svg>
+                    )}
                   </button>
                 </div>
               </form>

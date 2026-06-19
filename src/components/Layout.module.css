@@ -465,11 +465,12 @@
 }
 
 .bubbleAssistant {
-  background-color: #222226;
-  border: 1px solid #303038;
+  background-color: transparent;
+  border: none;
   color: var(--color-text);
-  border-radius: 16px 16px 16px 4px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  border-radius: 0;
+  box-shadow: none;
+  padding: 6px 0;
 }
 
 .bubbleUser {
