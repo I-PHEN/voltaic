@@ -4,8 +4,9 @@ import nodeStyles from './components/Node.module.css'
 import inspectorStyles from './components/Inspector.module.css'
 import { devices } from './data/devices'
 import { generateWorkflowSteps, type WorkflowStep } from './data/workflow'
-import { generateScriptAndChecklist, generateSCPITerminalLogs, type SCPILogLine } from './data/scriptGenerator'
+import { generateScriptAndChecklist, generateSCPITerminalLogsFromScript, type SCPILogLine } from './data/scriptGenerator'
 import { fetchPlan, planToWorkflowSteps } from './data/planClient'
+import { transcribeAudio } from './data/voiceClient'
 
 interface CanvasNode {
   id: string;
@@ -30,6 +31,12 @@ interface Message {
   timestamp: string;
   type?: 'step' | 'summary';
   stepType?: 'thinking' | 'add_device' | 'connect' | 'summary';
+  thinkingSteps?: Array<{
+    text: string;
+    type: 'thinking' | 'add_device' | 'connect' | 'summary';
+    status: 'pending' | 'running' | 'completed';
+  }>;
+  isThinkingComplete?: boolean;
 }
 
 const getDeviceColor = (type: string) => {
@@ -69,6 +76,26 @@ function App() {
   const [connections, setConnections] = useState<Connection[]>([])
   const [isStaging, setIsStaging] = useState(false)
   const activeTimersRef = useRef<number[]>([])
+  const activeThinkingMessageIdRef = useRef<string | null>(null)
+  const [expandedThoughts, setExpandedThoughts] = useState<Record<string, boolean>>({})
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+    return (localStorage.getItem('voltaic-theme') as 'dark' | 'light') || 'dark'
+  })
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme)
+    localStorage.setItem('voltaic-theme', theme)
+  }, [theme])
+
+  const toggleTheme = () => {
+    document.documentElement.classList.add('theme-switching')
+    setTheme(prev => prev === 'dark' ? 'light' : 'dark')
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        document.documentElement.classList.remove('theme-switching')
+      })
+    })
+  }
   
   // Dragging states
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null)
@@ -78,6 +105,7 @@ function App() {
   // Script and Terminal States
   const [generatedScript, setGeneratedScript] = useState<string | null>(null)
   const [generatedChecklist, setGeneratedChecklist] = useState<string[] | null>(null)
+  const [generatedRationale, setGeneratedRationale] = useState<string[] | null>(null)
   const [isScriptModalOpen, setIsScriptModalOpen] = useState(false)
   const [isScriptStaging, setIsScriptStaging] = useState(false)
   
@@ -89,15 +117,28 @@ function App() {
   
   // Selection states
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
+
+  // UI/UX Improvement States
+  const [validationErrors, setValidationErrors] = useState<Record<string, string[]>>({})
+  const [activeExecutingNodeId, setActiveExecutingNodeId] = useState<string | null>(null)
+  const [terminalSpeed, setTerminalSpeed] = useState<number>(250)
+  const [copiedScript, setCopiedScript] = useState(false)
+  const [copiedChecklist, setCopiedChecklist] = useState(false)
+  const [simulateError, setSimulateError] = useState(false)
+
+
   
-  // Voice state
+  // Voice state (Groq Whisper transcription)
   const [isListening, setIsListening] = useState(false)
+  const [isTranscribing, setIsTranscribing] = useState(false)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const audioChunksRef = useRef<Blob[]>([])
+  const mediaStreamRef = useRef<MediaStream | null>(null)
 
   // Collapsible & expandable panel states
   const [isLeftCollapsed, setIsLeftCollapsed] = useState(false)
   const [isRightCollapsed, setIsRightCollapsed] = useState(false)
   const [isRightExpanded, setIsRightExpanded] = useState(false)
-  const recognitionRef = useRef<any>(null)
   
   const messageEndRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLDivElement>(null)
@@ -117,6 +158,8 @@ function App() {
       if (terminalTimersRef.current) {
         terminalTimersRef.current.forEach((t) => clearTimeout(t))
       }
+      // Release the microphone if a recording is still active.
+      mediaStreamRef.current?.getTracks().forEach((t) => t.stop())
     }
   }, [])
 
@@ -253,6 +296,8 @@ function App() {
     setNodes([])
     setConnections([])
     setSelectedNodeId(null)
+    setValidationErrors({})
+    setActiveExecutingNodeId(null)
   }
 
   // Reset chat and clear canvas
@@ -271,7 +316,10 @@ function App() {
     setNodes([])
     setConnections([])
     setSelectedNodeId(null)
+    setValidationErrors({})
+    setActiveExecutingNodeId(null)
   }
+
 
   // Scroll to bottom of terminal when logs change
   useEffect(() => {
@@ -279,35 +327,113 @@ function App() {
   }, [terminalLogs])
 
   const handleRunWorkflow = () => {
-    // 1. Clear any active terminal timers
+    // 1. Clear any active terminal timers and reset executing node
     if (terminalTimersRef.current.length > 0) {
       terminalTimersRef.current.forEach((t) => clearTimeout(t))
       terminalTimersRef.current = []
     }
+    setActiveExecutingNodeId(null)
 
     setIsTerminalOpen(true)
     setIsTerminalRunning(true)
     setTerminalLogs([])
 
-    const logsToPrint = generateSCPITerminalLogs(nodes)
+    const logsToPrint = generateSCPITerminalLogsFromScript(generatedScript, simulateError)
+
     
+    let currentActiveNodeId: string | null = null
+
     logsToPrint.forEach((log, idx) => {
-      // 250ms interval between lines
       const timerId = window.setTimeout(() => {
         // Remove current timerId from tracking list
         terminalTimersRef.current = terminalTimersRef.current.filter((t) => t !== timerId)
+
+        // Determine executing node by parsing log.text
+        if (log.text.startsWith('CONNECT')) {
+          let matchedDeviceId = ''
+          if (log.text.includes('192.168.8.101')) matchedDeviceId = 'nge100'
+          else if (log.text.includes('192.168.8.102')) matchedDeviceId = 'fpc1500'
+          else if (log.text.includes('192.168.8.103')) matchedDeviceId = 'rtb24'
+          else if (log.text.includes('192.168.8.104')) matchedDeviceId = 'hmf2550'
+          
+          if (matchedDeviceId) {
+            const matchedNode = nodes.find((n) => n.deviceId === matchedDeviceId)
+            if (matchedNode) {
+              currentActiveNodeId = matchedNode.id
+              setActiveExecutingNodeId(matchedNode.id)
+            }
+          }
+        } else if (log.text.startsWith('✓') || log.text.startsWith('>>') || log.text.startsWith('⚠')) {
+          currentActiveNodeId = null
+          setActiveExecutingNodeId(null)
+        }
+
+        // Live parameter updates based on SCPI command string
+        if (currentActiveNodeId && log.text.startsWith('-> ')) {
+          const scpiCmd = log.text.substring(3).trim()
+          
+          setNodes((prevNodes) =>
+            prevNodes.map((n) => {
+              if (n.id !== currentActiveNodeId) return n
+              
+              const updatedProperties = { ...n.properties }
+              
+              if (n.deviceId === 'nge100') {
+                if (scpiCmd.startsWith('VOLT ')) {
+                  updatedProperties.voltage = parseFloat(scpiCmd.substring(5))
+                } else if (scpiCmd.startsWith('CURR ')) {
+                  updatedProperties.current = parseFloat(scpiCmd.substring(5))
+                } else if (scpiCmd.startsWith('OUTP ')) {
+                  updatedProperties.output = scpiCmd.substring(5) === 'ON'
+                }
+              } else if (n.deviceId === 'fpc1500') {
+                if (scpiCmd.startsWith('FREQ:CENT ')) {
+                  // Convert Hz back to MHz
+                  updatedProperties.centerFreq = parseFloat(scpiCmd.substring(10)) / 1e6
+                } else if (scpiCmd.startsWith('FREQ:SPAN ')) {
+                  // Convert Hz back to MHz
+                  updatedProperties.span = parseFloat(scpiCmd.substring(10)) / 1e6
+                } else if (scpiCmd.startsWith('DISP:TRAC:Y:RLEV ')) {
+                  updatedProperties.refLevel = parseFloat(scpiCmd.substring(17))
+                }
+              } else if (n.deviceId === 'rtb24') {
+                if (scpiCmd.startsWith('TIM:SCAL ')) {
+                  // Convert seconds back to ms
+                  updatedProperties.timebase = parseFloat(scpiCmd.substring(9)) * 1e3
+                } else if (scpiCmd.startsWith('CHAN1:SCAL ')) {
+                  updatedProperties.ch1Scale = parseFloat(scpiCmd.substring(11))
+                } else if (scpiCmd.startsWith('TRIG:A:SOUR ')) {
+                  updatedProperties.trigger = scpiCmd.substring(12)
+                }
+              } else if (n.deviceId === 'hmf2550') {
+                if (scpiCmd.startsWith('FREQ ')) {
+                  // Convert Hz back to kHz
+                  updatedProperties.frequency = parseFloat(scpiCmd.substring(5)) / 1e3
+                } else if (scpiCmd.startsWith('VOLT ')) {
+                  updatedProperties.amplitude = parseFloat(scpiCmd.substring(5))
+                } else if (scpiCmd.startsWith('OUTP ')) {
+                  updatedProperties.output = scpiCmd.substring(5) === 'ON'
+                }
+              }
+
+              return { ...n, properties: updatedProperties }
+            })
+          )
+        }
 
         setTerminalLogs((prev) => [...prev, log])
 
         // Check if this was the last line
         if (idx === logsToPrint.length - 1) {
           setIsTerminalRunning(false)
+          setActiveExecutingNodeId(null)
         }
-      }, idx * 250)
+      }, idx * terminalSpeed)
 
       terminalTimersRef.current.push(timerId)
     })
   }
+
 
   // Delete Node & Associated Connections
   const handleDeleteNode = (nodeId: string) => {
@@ -316,6 +442,11 @@ function App() {
     if (selectedNodeId === nodeId) {
       setSelectedNodeId(null)
     }
+    setValidationErrors((prev) => {
+      const next = { ...prev }
+      delete next[nodeId]
+      return next
+    })
   }
 
   // Edit node properties
@@ -333,7 +464,14 @@ function App() {
           : n
       )
     )
+    setValidationErrors((prev) => {
+      if (!prev[nodeId]) return prev
+      const next = { ...prev }
+      delete next[nodeId]
+      return next
+    })
   }
+
 
   // Copy Code to Clipboard
   const handleCopyCode = (codeText: string) => {
@@ -356,46 +494,57 @@ function App() {
   }
 
   // Speech Recognition Toggle
-  const toggleSpeech = () => {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-    if (!SpeechRecognition) {
-      alert("Speech recognition is not supported in this browser. Please use Chrome, Edge, or Safari.")
-      return
-    }
-
+  // Voice input via mic recording -> Groq Whisper transcription.
+  const toggleSpeech = async () => {
+    // Already recording -> stop; the recorder's onstop handler does the transcription.
     if (isListening) {
-      recognitionRef.current?.stop()
-      setIsListening(false)
+      mediaRecorderRef.current?.stop()
       return
     }
 
-    const rec = new SpeechRecognition()
-    rec.continuous = false
-    rec.interimResults = false
-    rec.lang = 'en-US'
-
-    rec.onstart = () => {
-      setIsListening(true)
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      alert("Microphone recording isn't supported in this browser. Try Chrome, Edge, or Safari.")
+      return
     }
 
-    rec.onresult = (e: any) => {
-      const transcript = e.results[0][0].transcript
-      if (transcript) {
-        setChatInput(transcript)
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      mediaStreamRef.current = stream
+      const recorder = new MediaRecorder(stream)
+      audioChunksRef.current = []
+
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data)
       }
-    }
 
-    rec.onerror = (e: any) => {
-      console.error("Speech recognition error:", e.error)
-      setIsListening(false)
-    }
+      recorder.onstop = async () => {
+        // Release the microphone.
+        mediaStreamRef.current?.getTracks().forEach((t) => t.stop())
+        mediaStreamRef.current = null
+        setIsListening(false)
 
-    rec.onend = () => {
-      setIsListening(false)
-    }
+        const blob = new Blob(audioChunksRef.current, { type: recorder.mimeType || 'audio/webm' })
+        if (blob.size === 0) return
 
-    recognitionRef.current = rec
-    rec.start()
+        setIsTranscribing(true)
+        try {
+          const text = await transcribeAudio(blob)
+          if (text) setChatInput((prev) => (prev.trim() ? `${prev.trim()} ${text}` : text))
+        } catch (err) {
+          console.error('Transcription failed:', err)
+          alert('Transcription failed. Check your connection / API key and try again.')
+        } finally {
+          setIsTranscribing(false)
+        }
+      }
+
+      mediaRecorderRef.current = recorder
+      recorder.start()
+      setIsListening(true)
+    } catch (err) {
+      console.error('Microphone access failed:', err)
+      alert('Could not access the microphone. Please grant permission and try again.')
+    }
   }
 
   // Run Parameter Limits Validation
@@ -415,43 +564,78 @@ function App() {
 
     const report: string[] = []
     let hasErrors = false
+    const errors: Record<string, string[]> = {}
 
     nodes.forEach((node) => {
+      const nodeErrors: string[] = []
       if (node.deviceId === 'nge100') {
         const v = parseFloat(node.properties.voltage ?? 0)
         const c = parseFloat(node.properties.current ?? 0)
         if (v < 0 || v > 32) {
-          report.push(`- ❌ **NGE100 Voltage limit error**: Configured voltage of **${v} V** exceeds physical channel hardware thresholds (0.00V - 32.00V).`)
+          const errMsg = `Voltage limit error: Configured voltage of **${v} V** exceeds physical channel hardware thresholds (0.00V - 32.00V).`
+          report.push(`- ❌ **NGE100**: ${errMsg}`)
+          nodeErrors.push(errMsg)
           hasErrors = true
         }
         if (c < 0.05 || c > 3.0) {
-          report.push(`- ❌ **NGE100 Current limit error**: Limit of **${c} A** exceeds socket limits (0.05A - 3.00A).`)
+          const errMsg = `Current limit error: Limit of **${c} A** exceeds socket limits (0.05A - 3.00A).`
+          report.push(`- ❌ **NGE100**: ${errMsg}`)
+          nodeErrors.push(errMsg)
           hasErrors = true
         }
       } else if (node.deviceId === 'fpc1500') {
         const cf = parseFloat(node.properties.centerFreq ?? 0)
         const span = parseFloat(node.properties.span ?? 0)
         if (cf < 0.005 || cf > 1500) {
-          report.push(`- ❌ **FPC1500 RF range error**: Center Frequency **${cf} MHz** is out of bounds (0.005 MHz - 1500.00 MHz).`)
+          const errMsg = `RF range error: Center Frequency **${cf} MHz** is out of bounds (0.005 MHz - 1500.00 MHz).`
+          report.push(`- ❌ **FPC1500**: ${errMsg}`)
+          nodeErrors.push(errMsg)
           hasErrors = true
         }
         if (span < 0.00001 || span > 1500) {
-          report.push(`- ❌ **FPC1500 Span scale error**: Sweep span of **${span} MHz** is out of bounds (10 Hz - 1500.00 MHz).`)
+          const errMsg = `Span scale error: Sweep span of **${span} MHz** is out of bounds (10 Hz - 1500.00 MHz).`
+          report.push(`- ❌ **FPC1500**: ${errMsg}`)
+          nodeErrors.push(errMsg)
           hasErrors = true
         }
       } else if (node.deviceId === 'rtb24') {
         const scale = parseFloat(node.properties.ch1Scale ?? 0)
         const tb = parseFloat(node.properties.timebase ?? 0)
         if (scale < 0.001 || scale > 10) {
-          report.push(`- ❌ **RTB24 Scale error**: Vertical setting of **${scale} V** is out of bounds (1 mV - 10.00 V).`)
+          const errMsg = `Scale error: Vertical setting of **${scale} V** is out of bounds (1 mV - 10.00 V).`
+          report.push(`- ❌ **RTB24**: ${errMsg}`)
+          nodeErrors.push(errMsg)
           hasErrors = true
         }
         if (tb < 0.000001 || tb > 500000) {
-          report.push(`- ❌ **RTB24 Horizontal sweep error**: Timebase of **${tb} ms** exceeds horizontal sweep thresholds.`)
+          const errMsg = `Horizontal sweep error: Timebase of **${tb} ms** exceeds horizontal sweep thresholds.`
+          report.push(`- ❌ **RTB24**: ${errMsg}`)
+          nodeErrors.push(errMsg)
+          hasErrors = true
+        }
+      } else if (node.deviceId === 'hmf2550') {
+        const freq = parseFloat(node.properties.frequency ?? 0)
+        const amp = parseFloat(node.properties.amplitude ?? 0)
+        if (freq < 0.00001 || freq > 50000) {
+          const errMsg = `Frequency error: Reference frequency **${freq} kHz** is out of bounds (0.00001 kHz - 50000.00 kHz).`
+          report.push(`- ❌ **HMF2550**: ${errMsg}`)
+          nodeErrors.push(errMsg)
+          hasErrors = true
+        }
+        if (amp < 0.001 || amp > 10) {
+          const errMsg = `Amplitude error: Waveform amplitude of **${amp} Vpp** exceeds hardware limits.`
+          report.push(`- ❌ **HMF2550**: ${errMsg}`)
+          nodeErrors.push(errMsg)
           hasErrors = true
         }
       }
+
+      if (nodeErrors.length > 0) {
+        errors[node.id] = nodeErrors
+      }
     })
+
+    setValidationErrors(errors)
 
     if (hasErrors) {
       setMessages((prev) => [
@@ -476,6 +660,7 @@ function App() {
     }
   }
 
+
   // Dynamic Python SCPI Code Generator with Staged Reveal Narration
   const handleGenerateScript = () => {
     if (nodes.length === 0) return
@@ -489,11 +674,64 @@ function App() {
     setIsScriptStaging(true)
     setIsTyping(false)
 
-    const { narrationSteps, script, checklist } = generateScriptAndChecklist(nodes)
+    const { narrationSteps, script, checklist, rationale } = generateScriptAndChecklist(nodes)
     
+    // Map initial thinking steps
+    const initialThinkingSteps: Array<{
+      text: string
+      type: 'thinking' | 'add_device' | 'connect' | 'summary'
+      status: 'pending' | 'running' | 'completed'
+    }> = narrationSteps.map((s, sIdx) => ({
+      text: s.label,
+      type: 'thinking' as const,
+      status: sIdx === 0 ? 'running' as const : 'pending' as const
+    }))
+
+    const replyMsgId = `script_reply_${Date.now()}`
+    activeThinkingMessageIdRef.current = replyMsgId
+
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: replyMsgId,
+        sender: 'assistant',
+        text: '',
+        timestamp: getFormattedTime(),
+        thinkingSteps: initialThinkingSteps,
+        isThinkingComplete: false
+      }
+    ])
+
     let cumulativeDelay = 0
 
-    narrationSteps.forEach((step, idx) => {
+    const updateScriptStepStatus = (stepIdx: number, status: 'completed' | 'running') => {
+      setMessages((prev) =>
+        prev.map((msg) => {
+          if (msg.id !== replyMsgId) return msg
+          const updatedSteps = msg.thinkingSteps ? [...msg.thinkingSteps] : []
+          
+          if (status === 'completed') {
+            if (updatedSteps[stepIdx]) {
+              updatedSteps[stepIdx].status = 'completed'
+            }
+            if (updatedSteps[stepIdx + 1]) {
+              updatedSteps[stepIdx + 1].status = 'running'
+            }
+          } else {
+            if (updatedSteps[stepIdx]) {
+              updatedSteps[stepIdx].status = 'running'
+            }
+          }
+          
+          return {
+            ...msg,
+            thinkingSteps: updatedSteps
+          }
+        })
+      )
+    }
+
+    narrationSteps.forEach((_, idx) => {
       // 600ms staged reveals
       cumulativeDelay += 600
 
@@ -501,37 +739,32 @@ function App() {
         // Remove current timerId from tracking list
         activeTimersRef.current = activeTimersRef.current.filter((t) => t !== timerId)
 
-        // Add timeline step log line
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `script_step_${Date.now()}_${idx}`,
-            sender: 'assistant',
-            text: step.label,
-            timestamp: getFormattedTime(),
-            type: 'step',
-            stepType: 'add_device' // Map to 'add_device' (plus/action icon)
-          }
-        ])
+        // Update step status
+        updateScriptStepStatus(idx, 'completed')
 
         // Check if this was the last step
         if (idx === narrationSteps.length - 1) {
           setIsScriptStaging(false)
           setGeneratedScript(script)
           setGeneratedChecklist(checklist)
+          setGeneratedRationale(rationale)
           setIsScriptModalOpen(true)
 
-          // Post final summary chat message
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: `script_ready_${Date.now()}`,
-              sender: 'assistant',
-              text: "Script ready — see the panel for your SCPI workflow and checklist.",
-              timestamp: getFormattedTime(),
-              type: 'summary'
-            }
-          ])
+          // Post final summary chat message with rationale
+          const rationaleSummary = rationale.length > 0
+            ? "\n\n**AI Design Decisions & Rationale:**\n" + rationale.map(r => `• ${r}`).join('\n')
+            : ''
+
+          setMessages((prev) =>
+            prev.map((msg) => {
+              if (msg.id !== replyMsgId) return msg
+              return {
+                ...msg,
+                text: `Script ready — see the panel for your SCPI workflow and checklist.${rationaleSummary}`,
+                isThinkingComplete: true
+              }
+            })
+          )
         }
       }, cumulativeDelay)
 
@@ -540,7 +773,7 @@ function App() {
   }
 
   // Run simulated staged workflow execution
-  const runStagedWorkflow = (steps: WorkflowStep[]) => {
+  const runStagedWorkflow = (steps: WorkflowStep[], existingMsgId?: string) => {
     // 1. Interruption safety: clear any previous active timers
     if (activeTimersRef.current.length > 0) {
       activeTimersRef.current.forEach((t) => clearTimeout(t))
@@ -550,9 +783,71 @@ function App() {
     setIsStaging(true)
     setIsTyping(false)
     
+    const replyMsgId = existingMsgId || `reply_${Date.now()}`
+    activeThinkingMessageIdRef.current = replyMsgId
+
+    if (!existingMsgId) {
+      // Map initial thinking steps
+      const initialThinkingSteps: Array<{
+        text: string
+        type: 'thinking' | 'add_device' | 'connect' | 'summary'
+        status: 'pending' | 'running' | 'completed'
+      }> = steps
+        .filter(s => s.type !== 'summary')
+        .map((s, sIdx) => {
+          let text = s.label || ''
+          if (s.type === 'thinking') text = s.label || 'Initializing workspace layout configuration...'
+          return {
+            text,
+            type: s.type,
+            status: sIdx === 0 ? 'running' as const : 'pending' as const
+          }
+        })
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: replyMsgId,
+          sender: 'assistant',
+          text: '',
+          timestamp: getFormattedTime(),
+          thinkingSteps: initialThinkingSteps,
+          isThinkingComplete: false
+        }
+      ])
+    }
+
     // Dictionary to map temporary sequence IDs to actual unique runtime IDs
     const idMapping: Record<string, string> = {}
     let cumulativeDelay = 0
+
+    const updateStepStatus = (stepIdx: number, status: 'completed' | 'running') => {
+      const targetIdx = existingMsgId ? stepIdx + 1 : stepIdx
+      setMessages((prev) =>
+        prev.map((msg) => {
+          if (msg.id !== replyMsgId) return msg
+          const updatedSteps = msg.thinkingSteps ? [...msg.thinkingSteps] : []
+          
+          if (status === 'completed') {
+            if (updatedSteps[targetIdx]) {
+              updatedSteps[targetIdx].status = 'completed'
+            }
+            if (updatedSteps[targetIdx + 1]) {
+              updatedSteps[targetIdx + 1].status = 'running'
+            }
+          } else {
+            if (updatedSteps[targetIdx]) {
+              updatedSteps[targetIdx].status = 'running'
+            }
+          }
+          
+          return {
+            ...msg,
+            thinkingSteps: updatedSteps
+          }
+        })
+      )
+    }
 
     steps.forEach((step, idx) => {
       let stepDelay = 600
@@ -567,10 +862,8 @@ function App() {
         activeTimersRef.current = activeTimersRef.current.filter((t) => t !== timerId)
 
         if (step.type === 'thinking') {
-          setIsTyping(true)
+          updateStepStatus(idx, 'completed')
         } else if (step.type === 'add_device') {
-          setIsTyping(false)
-          
           const tempId = step.payload?.fromId || `temp_${Date.now()}`
           const resolvedId = `${step.payload?.deviceId}_${Date.now()}`
           idMapping[tempId] = resolvedId
@@ -586,21 +879,9 @@ function App() {
           }
 
           setNodes((prev) => [...prev, newNode])
+          updateStepStatus(idx, 'completed')
 
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: `step_${Date.now()}_${idx}`,
-              sender: 'assistant',
-              text: step.label || '',
-              timestamp: getFormattedTime(),
-              type: 'step',
-              stepType: 'add_device'
-            }
-          ])
         } else if (step.type === 'connect') {
-          setIsTyping(false)
-          
           const resolvedFrom = idMapping[step.payload?.fromId || '']
           const resolvedTo = idMapping[step.payload?.toId || '']
 
@@ -612,46 +893,35 @@ function App() {
             }
             setConnections((prev) => [...prev, newConn])
           }
+          updateStepStatus(idx, 'completed')
 
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: `step_${Date.now()}_${idx}`,
-              sender: 'assistant',
-              text: step.label || '',
-              timestamp: getFormattedTime(),
-              type: 'step',
-              stepType: 'connect'
-            }
-          ])
         } else if (step.type === 'summary') {
-          setIsTyping(false)
           setIsStaging(false)
 
           const summaryText = step.payload?.summaryText || ''
           if (summaryText === 'CLEAR_CANVAS') {
             handleClear()
-            setMessages((prev) => [
-              ...prev,
-              {
-                id: `reply_${Date.now()}`,
-                sender: 'assistant',
-                text: "Workflow canvas cleared successfully. Let me know what you want to measure next!",
-                timestamp: getFormattedTime(),
-                type: 'summary'
-              }
-            ])
+            setMessages((prev) =>
+              prev.map((msg) => {
+                if (msg.id !== replyMsgId) return msg
+                return {
+                  ...msg,
+                  text: "Workflow canvas cleared successfully. Let me know what you want to measure next!",
+                  isThinkingComplete: true
+                }
+              })
+            )
           } else {
-            setMessages((prev) => [
-              ...prev,
-              {
-                id: `reply_${Date.now()}`,
-                sender: 'assistant',
-                text: summaryText,
-                timestamp: getFormattedTime(),
-                type: 'summary'
-              }
-            ])
+            setMessages((prev) =>
+              prev.map((msg) => {
+                if (msg.id !== replyMsgId) return msg
+                return {
+                  ...msg,
+                  text: summaryText,
+                  isThinkingComplete: true
+                }
+              })
+            )
           }
         }
       }, cumulativeDelay)
@@ -660,27 +930,112 @@ function App() {
     })
   }
 
-  // AI Intent processing: try the LLM planner, fall back to the keyword matcher.
   const processIntent = async (intentText: string) => {
     setIsTyping(true)
 
+    // 1. Immediately add the assistant's reply bubble in a thinking state:
+    const replyMsgId = `reply_${Date.now()}`
+    activeThinkingMessageIdRef.current = replyMsgId
+
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: replyMsgId,
+        sender: 'assistant',
+        text: '',
+        timestamp: getFormattedTime(),
+        thinkingSteps: [
+          { text: 'Analyzing instrument setup and intent...', type: 'thinking', status: 'running' }
+        ],
+        isThinkingComplete: false
+      }
+    ])
+
     let steps: WorkflowStep[]
+    let isConversational = false
+    let summaryMessage = ''
+
     try {
       const plan = await fetchPlan(intentText, nodes)
-      steps = planToWorkflowSteps(plan)
+      if (!plan.devices || plan.devices.length === 0) {
+        isConversational = true
+        summaryMessage = plan.summary
+      } else {
+        steps = planToWorkflowSteps(plan)
+      }
     } catch (err) {
       console.warn('AI planner unavailable, using offline planner:', err)
-      steps = generateWorkflowSteps(intentText)
+      const offlineSteps = generateWorkflowSteps(intentText)
+      
+      const hasDevices = offlineSteps.some((s) => s.type === 'add_device')
+      if (!hasDevices) {
+        isConversational = true
+        const summaryStep = offlineSteps.find((s) => s.type === 'summary')
+        summaryMessage = summaryStep?.payload?.summaryText || "I couldn't identify a hardware plan for that request."
+      } else {
+        steps = offlineSteps
+      }
     }
 
+    if (isConversational) {
+      setIsTyping(false)
+      // Update the immediate replyMsgId to be conversational instead of appending a new message:
+      setMessages((prev) =>
+        prev.map((msg) => {
+          if (msg.id !== replyMsgId) return msg
+          return {
+            ...msg,
+            text: summaryMessage,
+            thinkingSteps: [],
+            isThinkingComplete: true
+          }
+        })
+      )
+      return
+    }
+
+    // Since we have devices, let's map the workflow steps to thinking steps
+    const initialThinkingSteps: Array<{
+      text: string
+      type: 'thinking' | 'add_device' | 'connect' | 'summary'
+      status: 'pending' | 'running' | 'completed'
+    }> = [
+      { text: 'Analyzing instrument setup and intent...', type: 'thinking', status: 'completed' },
+      ...steps!.filter(s => s.type !== 'summary').map((s) => {
+        let text = s.label || ''
+        if (s.type === 'thinking') text = s.label || 'Initializing workspace layout configuration...'
+        return {
+          text,
+          type: s.type,
+          status: 'pending' as const
+        }
+      })
+    ]
+
+    // Set the first layout step to running
+    if (initialThinkingSteps[1]) {
+      initialThinkingSteps[1].status = 'running'
+    }
+
+    setMessages((prev) =>
+      prev.map((msg) => {
+        if (msg.id !== replyMsgId) return msg
+        return {
+          ...msg,
+          thinkingSteps: initialThinkingSteps
+        }
+      })
+    )
+
     // Clear canvas before placing new device layouts to prevent overlapping coordinates
-    const hasAdditions = steps.some((s) => s.type === 'add_device')
+    const hasAdditions = steps!.some((s) => s.type === 'add_device')
     if (hasAdditions) {
       handleClear()
     }
 
-    runStagedWorkflow(steps)
+    runStagedWorkflow(steps!, replyMsgId)
   }
+
 
   const handleSend = (e: React.FormEvent) => {
     e.preventDefault()
@@ -763,7 +1118,7 @@ function App() {
             </div>
             <pre
               style={{
-                backgroundColor: '#0a0a0c',
+                backgroundColor: 'var(--bg-code)',
                 border: '1px solid var(--border-color)',
                 borderTop: 'none',
                 borderBottomLeftRadius: '8px',
@@ -774,7 +1129,7 @@ function App() {
                 fontFamily: 'var(--font-mono)',
                 fontSize: '11px',
                 lineHeight: '1.4',
-                color: '#d19a66',
+                color: 'var(--color-code-text)',
                 whiteSpace: 'pre'
               }}
             >
@@ -1131,37 +1486,48 @@ function App() {
       {/* CENTER CANVAS PANEL */}
       <main className={styles.canvasContainer}>
         {/* TOOLBAR */}
-        <div className={styles.toolbar}>
-          {generatedScript && (
+        <div className={styles.toolbar} style={{ justifyContent: 'space-between' }}>
+          <div>
             <button 
               className={styles.toolbarButton} 
-              onClick={() => setIsScriptModalOpen(true)}
+              onClick={toggleTheme}
+              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+            >
+              {theme === 'dark' ? '☀️ Light Mode' : '🌙 Dark Mode'}
+            </button>
+          </div>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            {generatedScript && (
+              <button 
+                className={styles.toolbarButton} 
+                onClick={() => setIsScriptModalOpen(true)}
+                disabled={isStaging || isScriptStaging}
+              >
+                View Last Script
+              </button>
+            )}
+            <button 
+              className={styles.toolbarButton} 
+              onClick={handleClear}
               disabled={isStaging || isScriptStaging}
             >
-              View Last Script
+              Clear
             </button>
-          )}
-          <button 
-            className={styles.toolbarButton} 
-            onClick={handleClear}
-            disabled={isStaging || isScriptStaging}
-          >
-            Clear
-          </button>
-          <button 
-            className={styles.toolbarButton} 
-            onClick={handleValidate}
-            disabled={isStaging || isScriptStaging}
-          >
-            Validate
-          </button>
-          <button
-            className={`${styles.toolbarButton} ${styles.toolbarButtonPrimary}`}
-            onClick={handleGenerateScript}
-            disabled={nodes.length === 0 || isStaging || isScriptStaging}
-          >
-            Generate Script
-          </button>
+            <button 
+              className={styles.toolbarButton} 
+              onClick={handleValidate}
+              disabled={isStaging || isScriptStaging}
+            >
+              Validate
+            </button>
+            <button
+              className={`${styles.toolbarButton} ${styles.toolbarButtonPrimary}`}
+              onClick={handleGenerateScript}
+              disabled={nodes.length === 0 || isStaging || isScriptStaging}
+            >
+              Generate Script
+            </button>
+          </div>
         </div>
 
         {/* CANVAS SURFACE */}
@@ -1219,6 +1585,7 @@ function App() {
               return (
                 <path
                   key={conn.id}
+                  className={isTerminalRunning ? styles.activeFlow : ''}
                   d={`M ${x1} ${y1} C ${cp1x} ${y1}, ${cp2x} ${y2}, ${x2} ${y2}`}
                   stroke="var(--color-primary)"
                   strokeWidth="2.5"
@@ -1226,6 +1593,7 @@ function App() {
                   style={{ filter: 'drop-shadow(0 0 3px rgba(0, 145, 255, 0.35))' }}
                 />
               )
+
             })}
           </svg>
 
@@ -1246,20 +1614,38 @@ function App() {
               const isSelected = selectedNodeId === node.id
               
               const isDragging = draggingNodeId === node.id
-              
+              const hasErrors = validationErrors[node.id] && validationErrors[node.id].length > 0
+              const isExecuting = activeExecutingNodeId === node.id
+              const executingClass = isExecuting ? (nodeStyles[`nodeCardExecuting_${node.deviceId}`] || nodeStyles.nodeCardExecuting) : ''
+
+              let leftPortTitle = "Input Port Socket"
+              let rightPortTitle = "Output Port Socket"
+              if (node.deviceId === 'fpc1500') {
+                leftPortTitle = "RF Input Socket (50 Ω)"
+                rightPortTitle = "Ch1 Direct Sweep Output Port"
+              } else if (node.deviceId === 'rtb24') {
+                leftPortTitle = "Ch1 Analog Input Port (1 MΩ)"
+                rightPortTitle = "Ch1 Aux Trigger/Output Port"
+              } else if (node.deviceId === 'nge100') {
+                leftPortTitle = "Power Supply Input Port"
+                rightPortTitle = "Ch1 Power Output Port (32V/3A max)"
+              } else if (node.deviceId === 'hmf2550') {
+                leftPortTitle = "Function Generator Input Port"
+                rightPortTitle = "Ch1 Reference Wave Output (50 Ω)"
+              }
+
               return (
                 <div
                   key={node.id}
                   className={`${nodeStyles.nodeCard} ${isSelected ? nodeStyles.nodeCardSelected : ''} ${
                     isDragging ? nodeStyles.nodeCardDragging : ''
-                  }`}
+                  } ${hasErrors ? nodeStyles.nodeCardError : ''} ${executingClass}`}
                   style={{
                     transform: `translate(${node.x}px, ${node.y}px)`
                   }}
                   onPointerDown={(e) => handleNodePointerDown(e, node.id)}
                   onClick={(e) => {
                     e.stopPropagation()
-                    // Selection is handled in handlePointerUp to prevent opening properties during drags
                   }}
                 >
                   {/* Visual Left Connection Port */}
@@ -1267,12 +1653,26 @@ function App() {
                     className={`${nodeStyles.port} ${nodeStyles.portLeft} ${
                       hasInputConnection ? nodeStyles.portConnected : ''
                     }`}
-                    title="Input Port"
+                    title={leftPortTitle}
                   />
 
                   <div className={nodeStyles.nodeHeader}>
                     <span className={nodeStyles.nodeName}>{node.name}</span>
                     <span className={nodeStyles.nodeType}>{node.type}</span>
+                    
+                    {hasErrors && (
+                      <div 
+                        className={nodeStyles.validationBadge}
+                        title={validationErrors[node.id].join('\n')}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setSelectedNodeId(node.id)
+                        }}
+                      >
+                        ⚠
+                      </div>
+                    )}
+
                     <button
                       className={nodeStyles.deleteButton}
                       onClick={(e) => {
@@ -1306,8 +1706,9 @@ function App() {
                     className={`${nodeStyles.port} ${nodeStyles.portRight} ${
                       hasOutputConnection ? nodeStyles.portConnected : ''
                     }`}
-                    title="Output Port"
+                    title={rightPortTitle}
                   />
+
                 </div>
               )
             })
@@ -1442,39 +1843,104 @@ function App() {
                     )
                   }
 
+                  const hasThinking = msg.sender === 'assistant' && msg.thinkingSteps && msg.thinkingSteps.length > 0
+                  const isExpanded = hasThinking ? (expandedThoughts[msg.id] !== undefined ? expandedThoughts[msg.id] : !msg.isThinkingComplete) : false
+
                   return (
                     <div
                       key={msg.id}
                       className={`${styles.messageItem} ${
                         msg.sender === 'user' ? styles.messageUser : styles.messageAssistant
                       }`}
+                      style={{ flexDirection: 'column', alignItems: msg.sender === 'user' ? 'flex-end' : 'flex-start' }}
                     >
-                      <div
-                        className={`${styles.messageBubble} ${
-                          msg.sender === 'user'
-                            ? styles.bubbleUser
-                            : msg.type === 'summary'
-                            ? styles.bubbleSummary
-                            : styles.bubbleAssistant
-                        }`}
-                      >
-                        {renderMessageText(msg.text)}
-                      </div>
+                      {hasThinking && (
+                        <div className={styles.thinkingBox} style={{ maxWidth: '100%' }}>
+                          <div 
+                            className={styles.thinkingHeader} 
+                            onClick={() => {
+                              setExpandedThoughts(prev => ({
+                                ...prev,
+                                [msg.id]: !isExpanded
+                              }))
+                            }}
+                          >
+                            <div className={styles.thinkingHeaderLeft}>
+                              {!msg.isThinkingComplete ? (
+                                <span style={{ 
+                                  display: 'inline-block',
+                                  width: '8px', 
+                                  height: '8px', 
+                                  borderRadius: '50%', 
+                                  backgroundColor: 'var(--color-warning)',
+                                  animation: 'pulseScale 1s ease-in-out infinite alternate'
+                                }} />
+                              ) : (
+                                <span style={{ color: 'var(--color-success)', fontWeight: 'bold' }}>✓</span>
+                              )}
+                              <span>
+                                {!msg.isThinkingComplete 
+                                  ? "Thinking Process..." 
+                                  : `Thinking Process (Completed)`}
+                              </span>
+                            </div>
+                            <span 
+                              className={`${styles.thinkingChevron} ${isExpanded ? styles.thinkingChevronExpanded : ''}`}
+                            >
+                              ▼
+                            </span>
+                          </div>
+                          
+                          {isExpanded && (
+                            <div className={styles.thinkingBody}>
+                              {msg.thinkingSteps?.map((step, sIdx) => (
+                                <div key={sIdx} className={styles.thinkingStepItem}>
+                                  <div className={styles.stepIndicator}>
+                                    {step.status === 'completed' && (
+                                      <span className={styles.indicator_completed}>✓</span>
+                                    )}
+                                    {step.status === 'running' && (
+                                      <span className={styles.indicator_running} />
+                                    )}
+                                    {step.status === 'pending' && (
+                                      <span className={styles.indicator_pending} />
+                                    )}
+                                  </div>
+                                  <span className={
+                                    step.status === 'completed' 
+                                      ? styles.stepStatus_completed 
+                                      : step.status === 'running' 
+                                      ? styles.stepStatus_running 
+                                      : styles.stepStatus_pending
+                                  }>
+                                    {step.text}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {msg.text && (
+                        <div
+                          className={`${styles.messageBubble} ${
+                            msg.sender === 'user'
+                              ? styles.bubbleUser
+                              : msg.type === 'summary'
+                              ? styles.bubbleSummary
+                              : styles.bubbleAssistant
+                          }`}
+                        >
+                          {renderMessageText(msg.text)}
+                        </div>
+                      )}
                       <span className={styles.messageTimestamp}>{msg.timestamp}</span>
                     </div>
                   )
                 })}
                 
-                {/* Typing indicator */}
-                {isTyping && (
-                  <div className={`${styles.messageItem} ${styles.messageAssistant}`}>
-                    <div className={`${styles.messageBubble} ${styles.bubbleAssistant}`} style={{ display: 'flex', gap: '3px', padding: '10px 14px' }}>
-                      <span style={{ width: '4px', height: '4px', background: '#888', borderRadius: '50%', animation: 'bounce 0.6s infinite alternate' }} />
-                      <span style={{ width: '4px', height: '4px', background: '#888', borderRadius: '50%', animation: 'bounce 0.6s infinite alternate 0.2s' }} />
-                      <span style={{ width: '4px', height: '4px', background: '#888', borderRadius: '50%', animation: 'bounce 0.6s infinite alternate 0.4s' }} />
-                    </div>
-                  </div>
-                )}
+                {/* Typing indicator removed as requested */}
                 
                 {/* Suggestion Chips */}
                 {!isTyping && messages.length === 0 && (
@@ -1484,19 +1950,35 @@ function App() {
                     </span>
                     <button
                       onClick={() => handleSuggestionClick('Measure SNR of amplifier at 500 MHz')}
-                      style={{ background: '#222226', border: '1px solid #303038', color: 'var(--color-text)', borderRadius: '18px', padding: '8px 16px', fontSize: '12px', textAlign: 'left', cursor: 'pointer', outline: 'none', transition: 'all 0.15s' }}
-                      onMouseOver={(e) => { e.currentTarget.style.borderColor = '#444450'; e.currentTarget.style.backgroundColor = 'var(--bg-card-hover)'; }}
-                      onMouseOut={(e) => { e.currentTarget.style.borderColor = '#303038'; e.currentTarget.style.backgroundColor = '#222226'; }}
+                      style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--color-text)', borderRadius: '18px', padding: '8px 16px', fontSize: '12px', textAlign: 'left', cursor: 'pointer', outline: 'none', transition: 'all 0.15s' }}
+                      onMouseOver={(e) => { e.currentTarget.style.borderColor = 'var(--border-color-hover)'; e.currentTarget.style.backgroundColor = 'var(--bg-card-hover)'; }}
+                      onMouseOut={(e) => { e.currentTarget.style.borderColor = 'var(--border-color)'; e.currentTarget.style.backgroundColor = 'var(--bg-card)'; }}
                     >
                       Measure SNR of amplifier at 500 MHz
                     </button>
                     <button
                       onClick={() => handleSuggestionClick('Measure 10 kHz sine wave parameters')}
-                      style={{ background: '#222226', border: '1px solid #303038', color: 'var(--color-text)', borderRadius: '18px', padding: '8px 16px', fontSize: '12px', textAlign: 'left', cursor: 'pointer', outline: 'none', transition: 'all 0.15s' }}
-                      onMouseOver={(e) => { e.currentTarget.style.borderColor = '#444450'; e.currentTarget.style.backgroundColor = 'var(--bg-card-hover)'; }}
-                      onMouseOut={(e) => { e.currentTarget.style.borderColor = '#303038'; e.currentTarget.style.backgroundColor = '#222226'; }}
+                      style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--color-text)', borderRadius: '18px', padding: '8px 16px', fontSize: '12px', textAlign: 'left', cursor: 'pointer', outline: 'none', transition: 'all 0.15s' }}
+                      onMouseOver={(e) => { e.currentTarget.style.borderColor = 'var(--border-color-hover)'; e.currentTarget.style.backgroundColor = 'var(--bg-card-hover)'; }}
+                      onMouseOut={(e) => { e.currentTarget.style.borderColor = 'var(--border-color)'; e.currentTarget.style.backgroundColor = 'var(--bg-card)'; }}
                     >
                       Measure 10 kHz sine wave parameters
+                    </button>
+                    <button
+                      onClick={() => handleSuggestionClick('Power a board at 5 V and trace a 25 kHz reference wave on the scope')}
+                      style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--color-text)', borderRadius: '18px', padding: '8px 16px', fontSize: '12px', textAlign: 'left', cursor: 'pointer', outline: 'none', transition: 'all 0.15s' }}
+                      onMouseOver={(e) => { e.currentTarget.style.borderColor = 'var(--border-color-hover)'; e.currentTarget.style.backgroundColor = 'var(--bg-card-hover)'; }}
+                      onMouseOut={(e) => { e.currentTarget.style.borderColor = 'var(--border-color)'; e.currentTarget.style.backgroundColor = 'var(--bg-card)'; }}
+                    >
+                      Power a board at 5 V and trace a 25 kHz reference wave on the scope
+                    </button>
+                    <button
+                      onClick={() => handleSuggestionClick('Configure NGE100 at unsafe 45 V limits check')}
+                      style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--color-text)', borderRadius: '18px', padding: '8px 16px', fontSize: '12px', textAlign: 'left', cursor: 'pointer', outline: 'none', transition: 'all 0.15s' }}
+                      onMouseOver={(e) => { e.currentTarget.style.borderColor = 'var(--border-color-hover)'; e.currentTarget.style.backgroundColor = 'var(--bg-card-hover)'; }}
+                      onMouseOut={(e) => { e.currentTarget.style.borderColor = 'var(--border-color)'; e.currentTarget.style.backgroundColor = 'var(--bg-card)'; }}
+                    >
+                      Configure NGE100 at unsafe 45 V (safety limits demo)
                     </button>
                   </div>
                 )}
@@ -1525,14 +2007,20 @@ function App() {
                     type="button"
                     className={`${styles.integratedMicBtn} ${isListening ? styles.integratedMicBtnActive : ''}`}
                     onClick={toggleSpeech}
-                    disabled={isStaging || isScriptStaging}
-                    title={isListening ? 'Stop listening' : 'Start voice mode'}
+                    disabled={isStaging || isScriptStaging || isTranscribing}
+                    title={isTranscribing ? 'Transcribing…' : isListening ? 'Stop recording' : 'Start voice input'}
                   >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
-                      <path d="M19 10v1a7 7 0 0 1-14 0v-1"/>
-                      <line x1="12" y1="19" x2="12" y2="22"/>
-                    </svg>
+                    {isTranscribing ? (
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ animation: 'spin 0.8s linear infinite' }}>
+                        <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+                      </svg>
+                    ) : (
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+                        <path d="M19 10v1a7 7 0 0 1-14 0v-1"/>
+                        <line x1="12" y1="19" x2="12" y2="22"/>
+                      </svg>
+                    )}
                   </button>
                   <button
                     type={isTyping ? "button" : "submit"}
@@ -1589,19 +2077,34 @@ function App() {
                   <span>GENERATED PYTHON SCPI SCRIPT (PyVISA)</span>
                   <button 
                     className={styles.modalCopyBtn}
+                    style={copiedScript ? { color: '#10b981', borderColor: '#10b981' } : undefined}
                     onClick={() => {
                       if (generatedScript) {
-                        navigator.clipboard.writeText(generatedScript)
-                        alert("Python Visa Script copied to clipboard!")
+                        navigator.clipboard.writeText(generatedScript).then(() => {
+                          setCopiedScript(true)
+                          setTimeout(() => setCopiedScript(false), 2000)
+                        })
                       }
                     }}
                   >
-                    Copy Script
+                    {copiedScript ? "✓ Copied!" : "Copy Script"}
                   </button>
                 </div>
-                <pre className={styles.scriptPre}>
-                  <code>{generatedScript}</code>
-                </pre>
+                <textarea
+                  className={styles.scriptPre}
+                  value={generatedScript || ''}
+                  onChange={(e) => setGeneratedScript(e.target.value)}
+                  spellCheck={false}
+                  disabled={isTerminalRunning}
+                  style={{
+                    border: 'none',
+                    resize: 'none',
+                    outline: 'none',
+                    width: '100%',
+                    height: '100%',
+                    boxSizing: 'border-box'
+                  }}
+                />
               </div>
               
               {/* Right Column: Checklist & Run Terminal */}
@@ -1612,14 +2115,17 @@ function App() {
                     <span>📋 PRE-FLIGHT HARDWARE CHECKLIST</span>
                     <button 
                       className={styles.modalCopyBtn}
+                      style={copiedChecklist ? { color: '#10b981', borderColor: '#10b981' } : undefined}
                       onClick={() => {
                         if (generatedChecklist) {
-                          navigator.clipboard.writeText(generatedChecklist.join('\n'))
-                          alert("Laboratory checklist copied to clipboard!")
+                          navigator.clipboard.writeText(generatedChecklist.join('\n')).then(() => {
+                            setCopiedChecklist(true)
+                            setTimeout(() => setCopiedChecklist(false), 2000)
+                          })
                         }
                       }}
                     >
-                      Copy Checklist
+                      {copiedChecklist ? "✓ Copied!" : "Copy Checklist"}
                     </button>
                   </div>
                   <ul className={styles.checklistList}>
@@ -1632,26 +2138,102 @@ function App() {
                   </ul>
                 </div>
                 
+                {/* Rationale Section */}
+                <div style={{ borderBottom: '1px solid var(--border-color)', backgroundColor: 'rgba(255, 255, 255, 0.002)' }}>
+                  <div className={styles.columnHeader}>
+                    <span>💡 AI DESIGN DECISIONS & RATIONALE</span>
+                  </div>
+                  <ul className={styles.checklistList}>
+                    {generatedRationale?.map((item, idx) => (
+                      <li key={idx}>
+                        <span style={{ color: '#fbbf24', fontSize: '14px', flexShrink: 0, marginTop: '2px' }}>✦</span>
+                        <span className={styles.checkText}>{item}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                
                 {/* Terminal Execution Section */}
                 <div className={styles.terminalSection}>
                   <div className={styles.terminalHeader}>
                     <span>💻 MOCK SCPI EXECUTION BUS</span>
-                    <button
-                      className={styles.terminalRunBtn}
-                      onClick={handleRunWorkflow}
-                      disabled={isTerminalRunning}
-                    >
-                      {isTerminalRunning ? "Running..." : "Run Workflow"}
-                    </button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <label 
+                        htmlFor="terminal-error-toggle" 
+                        style={{ 
+                          fontSize: '10px', 
+                          color: 'var(--color-text-muted)', 
+                          fontWeight: 700, 
+                          textTransform: 'uppercase',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          cursor: isTerminalRunning ? 'not-allowed' : 'pointer'
+                        }}
+                      >
+                        <input
+                          id="terminal-error-toggle"
+                          type="checkbox"
+                          checked={simulateError}
+                          onChange={(e) => setSimulateError(e.target.checked)}
+                          disabled={isTerminalRunning}
+                          style={{ margin: 0, cursor: isTerminalRunning ? 'not-allowed' : 'pointer' }}
+                        />
+                        Simulate Failure
+                      </label>
+                      <label 
+                        htmlFor="terminal-speed-select" 
+                        style={{ 
+                          fontSize: '10px', 
+                          color: 'var(--color-text-muted)', 
+                          fontWeight: 700, 
+                          textTransform: 'uppercase' 
+                        }}
+                      >
+                        Speed:
+                      </label>
+
+                      <select
+                        id="terminal-speed-select"
+                        value={terminalSpeed}
+                        onChange={(e) => setTerminalSpeed(Number(e.target.value))}
+                        disabled={isTerminalRunning}
+                        style={{
+                          backgroundColor: 'var(--bg-code)',
+                          border: '1px solid var(--border-color)',
+                          color: 'var(--color-text)',
+                          fontSize: '11px',
+                          padding: '3px 8px',
+                          borderRadius: '4px',
+                          outline: 'none',
+                          cursor: isTerminalRunning ? 'not-allowed' : 'pointer'
+                        }}
+                      >
+                        <option value={500}>0.5s</option>
+                        <option value={250}>0.25s</option>
+                        <option value={100}>0.1s</option>
+                        <option value={0}>Instant</option>
+                      </select>
+                      <button
+                        className={styles.terminalRunBtn}
+                        onClick={handleRunWorkflow}
+                        disabled={isTerminalRunning}
+                      >
+                        {isTerminalRunning ? "Running..." : "Run Workflow"}
+                      </button>
+                    </div>
                   </div>
+
                   
                   {isTerminalOpen && (
                     <div className={styles.terminalConsole}>
                       {terminalLogs.map((log, idx) => {
-                        let color = '#888'
+                        let color = 'var(--color-text-muted)'
                         if (log.type === 'cmd') color = '#22d3ee' // cyan for commands
                         if (log.type === 'warning') color = '#fbbf24' // amber for warnings
                         if (log.type === 'success') color = '#34d399' // green for success
+                        if (log.type === 'error') color = '#ef4444' // red for errors
+
                         
                         return (
                           <div 

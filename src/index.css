@@ -1,5 +1,14 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes bounce {
+  from { transform: translateY(0); opacity: 0.5; }
+  to { transform: translateY(-4px); opacity: 1; }
+}
+
 :root {
   --bg-app: #0a0a0a;         /* Deep neutral black */
   --bg-canvas: #121212;      /* Neutral charcoal canvas background */
@@ -13,9 +22,79 @@
   --color-text-muted: #737373; /* Neutral gray muted text */
   --border-color: #242424;   /* Flat dark gray border */
   --dot-color: rgba(255, 255, 255, 0.045); /* Subtle canvas dot grid */
-  
+
+  /* Extended tokens */
+  --border-color-hover: #383838;
+  --bg-subtle: rgba(255, 255, 255, 0.02);
+  --bg-bubble-user: #2a2a30;
+  --bg-code: #080809;
+  --bg-code-header: #0b0b0d;
+  --bg-terminal: #050507;
+  --bg-canvas-dragging: #151515;
+  --bg-thinking: #121214;
+  --bg-thinking-header: #17171a;
+  --bg-thinking-header-hover: #1c1c20;
+  --bg-screen: #08090d;
+  --bg-port: #121212;
+  --color-text-on-primary: #ffffff;
+  --color-placeholder: rgba(255, 255, 255, 0.2);
+  --color-code-text: #a9b2c3;
+  --color-timestamp: #555555;
+  --color-step-completed: #888892;
+  --color-success: #10b981;
+  --color-warning: #f59e0b;
+  --color-error: #ef4444;
+  --border-thinking: #242428;
+
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, monospace;
+}
+
+[data-theme='light'] {
+  --bg-app: #f4f6f9;         /* Soft warm grey background */
+  --bg-canvas: #ffffff;      /* Clean white canvas background */
+  --bg-sidebar: #f8fafc;     /* Clean slate-like sidebar */
+  --bg-chat: #f8fafc;        /* Clean slate-like chat panel */
+  --bg-card: #ffffff;        /* Crisp white card */
+  --bg-card-hover: #f1f5f9;  /* Muted grey hover state */
+  --color-primary: #0091ff;  /* R&S Electric Blue stays vibrant */
+  --color-primary-hover: #007adb; /* Muted primary blue */
+  --color-text: #0f172a;     /* Dark slate-charcoal text */
+  --color-text-muted: #64748b; /* Muted slate gray text */
+  --border-color: #e2e8f0;   /* Light slate border */
+  --dot-color: rgba(15, 23, 42, 0.04); /* Subtle dark dots for grid layout */
+
+  /* Extended tokens — light mode overrides */
+  --border-color-hover: #cbd5e1;
+  --bg-subtle: rgba(15, 23, 42, 0.02);
+  --bg-bubble-user: #e2e8f0;
+  --bg-code: #f8fafc;
+  --bg-code-header: #f1f5f9;
+  --bg-terminal: #f1f5f9;
+  --bg-canvas-dragging: #f1f5f9;
+  --bg-thinking: #f1f5f9;
+  --bg-thinking-header: #e2e8f0;
+  --bg-thinking-header-hover: #cbd5e1;
+  --bg-screen: #0a0a12;       /* LCD screens stay dark even in light mode */
+  --bg-port: #e2e8f0;
+  --color-text-on-primary: #ffffff;
+  --color-placeholder: rgba(15, 23, 42, 0.3);
+  --color-code-text: #334155;
+  --color-timestamp: #94a3b8;
+  --color-step-completed: #64748b;
+  --color-success: #059669;
+  --color-warning: #d97706;
+  --color-error: #dc2626;
+  --border-thinking: #e2e8f0;
+}
+
+/* Instant theme swap — disable all transitions during toggle */
+.theme-switching,
+.theme-switching *,
+.theme-switching *::before,
+.theme-switching *::after {
+  transition: none !important;
+  animation-duration: 0s !important;
 }
 
 * {
@@ -61,4 +140,12 @@ input {
 
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.15);
+}
+
+[data-theme='light'] ::-webkit-scrollbar-thumb {
+  background: rgba(15, 23, 42, 0.1);
+}
+
+[data-theme='light'] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(15, 23, 42, 0.2);
 }
