@@ -27,6 +27,13 @@ describe('parseAndValidatePlan', () => {
     expect(() => parseAndValidatePlan('not json')).toThrow()
   })
 
+  it('accepts a conversational plan with no devices', () => {
+    const raw = JSON.stringify({ devices: [], connections: [], summary: 'Hi! Describe a measurement.' })
+    const plan = parseAndValidatePlan(raw)
+    expect(plan.devices).toEqual([])
+    expect(plan.summary).toContain('Describe a measurement')
+  })
+
   it('drops self-referential and out-of-range connections', () => {
     const raw = JSON.stringify({
       devices: [

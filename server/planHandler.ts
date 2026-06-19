@@ -18,6 +18,7 @@ const SYSTEM_RULES = `You are Voltaic's instrumentation planner for Rohde & Schw
 Given a measurement request, choose instruments from the catalog below and configure them.
 
 Rules:
+- If the message is NOT a measurement/instrumentation request — e.g. a greeting ("hello", "hi"), thanks, small talk, or anything you cannot map to a bench setup — return an EMPTY "devices" array, an empty "connections" array, and a short, friendly "summary" inviting them to describe a measurement. NEVER fabricate instruments for a non-measurement message.
 - Use ONLY the devices and parameter keys listed. Never invent devices or keys.
 - Include ONLY the instruments the request actually needs. Do NOT add a power supply (nge100) unless the request involves an amplifier, a circuit/board, or powering a device. Do NOT add a spectrum analyzer (fpc1500) unless the request mentions SNR, spectrum, harmonics, or RF power. A simple "show a waveform on the scope" needs only a function generator and an oscilloscope.
 - Parse concrete numeric values from the request (frequencies, voltages, amplitudes) and set the matching parameter. Convert units to the parameter's unit.
@@ -52,6 +53,14 @@ const FEW_SHOT_WAVE_ASSISTANT = JSON.stringify({
   summary: 'Set the HMF2550 generator to a 10 kHz sine wave and routed it to Channel 1 of the RTB24 oscilloscope.',
 })
 
+// Third example: a non-measurement message gets a friendly reply, no instruments.
+const FEW_SHOT_CHAT_USER = 'hello'
+const FEW_SHOT_CHAT_ASSISTANT = JSON.stringify({
+  devices: [],
+  connections: [],
+  summary: "Hi! I'm Voltaic. Describe a measurement — for example \"view a 1 kHz sine wave on the scope\" or \"measure SNR of an amplifier at 900 MHz\" — and I'll set up the right R&S instruments for you.",
+})
+
 export function buildMessages(intent: string): ChatMessage[] {
   return [
     { role: 'system', content: SYSTEM_RULES + buildDeviceCatalog() },
@@ -59,6 +68,8 @@ export function buildMessages(intent: string): ChatMessage[] {
     { role: 'assistant', content: FEW_SHOT_SNR_ASSISTANT },
     { role: 'user', content: FEW_SHOT_WAVE_USER },
     { role: 'assistant', content: FEW_SHOT_WAVE_ASSISTANT },
+    { role: 'user', content: FEW_SHOT_CHAT_USER },
+    { role: 'assistant', content: FEW_SHOT_CHAT_ASSISTANT },
     { role: 'user', content: intent },
   ]
 }

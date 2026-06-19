@@ -35,6 +35,13 @@ describe('planToWorkflowSteps', () => {
     const summary = planToWorkflowSteps(plan).find((s) => s.type === 'summary')
     expect(summary?.payload?.summaryText).toBe('Done.')
   })
+
+  it('emits only a summary step (no devices) for a conversational plan', () => {
+    const chatOnly: Plan = { devices: [], connections: [], summary: 'Hi! Describe a measurement.' }
+    const steps = planToWorkflowSteps(chatOnly)
+    expect(steps.map((s) => s.type)).toEqual(['summary'])
+    expect(steps[0].payload?.summaryText).toBe('Hi! Describe a measurement.')
+  })
 })
 
 describe('fetchPlan', () => {

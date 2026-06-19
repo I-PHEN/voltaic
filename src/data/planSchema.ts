@@ -8,7 +8,8 @@ export const planDeviceSchema = z.object({
 })
 
 export const planSchema = z.object({
-  devices: z.array(planDeviceSchema).min(1),
+  // Empty devices = a conversational reply (e.g. a greeting), not a bench build.
+  devices: z.array(planDeviceSchema),
   connections: z.array(z.object({ from: z.number().int(), to: z.number().int() })).default([]),
   summary: z.string().min(1),
 })

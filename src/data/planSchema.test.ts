@@ -20,8 +20,9 @@ describe('planSchema', () => {
     expect(() => planSchema.parse(bad)).toThrow()
   })
 
-  it('rejects a plan with no devices', () => {
-    expect(() => planSchema.parse({ ...valid, devices: [] })).toThrow()
+  it('accepts a conversational plan with no devices', () => {
+    const chatOnly = { devices: [], connections: [], summary: 'Hi! Describe a measurement.' }
+    expect(planSchema.parse(chatOnly).devices).toEqual([])
   })
 
   it('defaults connections to an empty array when omitted', () => {
