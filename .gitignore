@@ -12,6 +12,11 @@ dist
 dist-ssr
 *.local
 
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -22,5 +27,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-# Local Device Documentation
-docs/
+# Local Device Documentation (R&S PDFs) — ignored, but keep project specs tracked
+docs/*
+!docs/superpowers/
