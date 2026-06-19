@@ -15,7 +15,7 @@ function planApiPlugin(env: Record<string, string>): Plugin {
         let raw = ''
         req.on('data', (chunk) => (raw += chunk))
         req.on('end', async () => {
-          res.setHeader('Content-Type', 'application/json')
+          res.setHeader('Content-Type', 'application/json; charset=utf-8')
           try {
             const { intent } = JSON.parse(raw || '{}') as { intent?: string }
             const result = await handlePlanRequest(intent ?? '', {

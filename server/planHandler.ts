@@ -12,13 +12,14 @@ export interface PlanHandlerResult {
   body: { plan: Plan } | { error: string }
 }
 
-type ChatMessage = { role: 'system' | 'user'; content: string }
+type ChatMessage = { role: 'system' | 'user' | 'assistant'; content: string }
 
 const SYSTEM_RULES = `You are Voltaic's instrumentation planner for Rohde & Schwarz test benches.
 Given a measurement request, choose instruments from the catalog below and configure them.
 
 Rules:
 - Use ONLY the devices and parameter keys listed. Never invent devices or keys.
+- Include ONLY the instruments the request actually needs. Do NOT add a power supply (nge100) unless the request involves an amplifier, a circuit/board, or powering a device. Do NOT add a spectrum analyzer (fpc1500) unless the request mentions SNR, spectrum, harmonics, or RF power. A simple "show a waveform on the scope" needs only a function generator and an oscilloscope.
 - Parse concrete numeric values from the request (frequencies, voltages, amplitudes) and set the matching parameter. Convert units to the parameter's unit.
 - When a value is not specified, use the parameter's default.
 - Order devices in signal flow (source/supply first, measurement instrument last) and connect them with "connections" as index pairs into "devices".
@@ -30,8 +31,8 @@ Rules:
 Device catalog:
 `
 
-const FEW_SHOT_USER = 'measure SNR of amplifier at 500 MHz'
-const FEW_SHOT_ASSISTANT = JSON.stringify({
+const FEW_SHOT_SNR_USER = 'measure SNR of amplifier at 500 MHz'
+const FEW_SHOT_SNR_ASSISTANT = JSON.stringify({
   devices: [
     { deviceId: 'nge100', properties: { voltage: 12, current: 1.5, output: true }, role: 'Provide +12V DC power to the amplifier.' },
     { deviceId: 'fpc1500', properties: { centerFreq: 500, span: 10, refLevel: -10 }, role: 'Capture the amplifier output spectrum around 500 MHz.' },
@@ -40,11 +41,24 @@ const FEW_SHOT_ASSISTANT = JSON.stringify({
   summary: 'Placed the NGE100 supply powering the amplifier and the FPC1500 analyzer centered at 500 MHz with a 10 MHz span.',
 })
 
+// Second example: a plain waveform-on-scope request needs ONLY the generator + scope.
+const FEW_SHOT_WAVE_USER = 'show a 10 kHz sine wave on the oscilloscope'
+const FEW_SHOT_WAVE_ASSISTANT = JSON.stringify({
+  devices: [
+    { deviceId: 'hmf2550', properties: { frequency: 10, amplitude: 2 }, role: 'Generate a 10 kHz sine reference signal.' },
+    { deviceId: 'rtb24', properties: { ch1Scale: 1, timebase: 1, trigger: 'CH1' }, role: 'Display the waveform on Channel 1.' },
+  ],
+  connections: [{ from: 0, to: 1 }],
+  summary: 'Set the HMF2550 generator to a 10 kHz sine wave and routed it to Channel 1 of the RTB24 oscilloscope.',
+})
+
 export function buildMessages(intent: string): ChatMessage[] {
   return [
     { role: 'system', content: SYSTEM_RULES + buildDeviceCatalog() },
-    { role: 'user', content: FEW_SHOT_USER },
-    { role: 'system', content: FEW_SHOT_ASSISTANT },
+    { role: 'user', content: FEW_SHOT_SNR_USER },
+    { role: 'assistant', content: FEW_SHOT_SNR_ASSISTANT },
+    { role: 'user', content: FEW_SHOT_WAVE_USER },
+    { role: 'assistant', content: FEW_SHOT_WAVE_ASSISTANT },
     { role: 'user', content: intent },
   ]
 }
