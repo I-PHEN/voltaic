@@ -287,6 +287,27 @@
   gap: 8px;
 }
 
+.newChatButton {
+  margin-left: auto;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--color-text-muted);
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  outline: none;
+}
+
+.newChatButton:hover {
+  color: var(--color-text);
+  border-color: #383838;
+  background-color: var(--bg-card-hover);
+}
+
 .chatIndicator {
   width: 6px;
   height: 6px;

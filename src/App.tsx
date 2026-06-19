@@ -90,6 +90,18 @@ function App() {
     setSelectedNodeId(null)
   }
 
+  // Reset chat and clear canvas
+  const handleNewChat = () => {
+    setMessages([
+      {
+        id: 'welcome',
+        sender: 'assistant',
+        text: "Hi! Describe a measurement and I'll build the workflow for you."
+      }
+    ])
+    handleClear()
+  }
+
   // Delete Node & Associated Connections
   const handleDeleteNode = (nodeId: string) => {
     setNodes((prev) => prev.filter((n) => n.id !== nodeId))
@@ -604,9 +616,9 @@ function App() {
               if (!fromNode || !toNode) return null
 
               const x1 = fromNode.x + 190 // Output Socket
-              const y1 = fromNode.y + 62  // Card Center Height
+              const y1 = fromNode.y + 64  // Card Center Height (128px / 2)
               const x2 = toNode.x         // Input Socket
-              const y2 = toNode.y + 62
+              const y2 = toNode.y + 64
 
               // Curved Bezier calculation
               const cp1x = x1 + 50
@@ -731,7 +743,12 @@ function App() {
           <>
             <div className={styles.chatTitle}>
               <span className={styles.chatIndicator} />
-              Voltaic Assistant
+              <span>Voltaic Assistant</span>
+              {messages.length > 1 && (
+                <button onClick={handleNewChat} className={styles.newChatButton}>
+                  New Chat
+                </button>
+              )}
             </div>
             
             <div className={styles.messageList}>
@@ -768,7 +785,7 @@ function App() {
               )}
               
               {/* Suggestion Chips */}
-              {!isTyping && (
+              {!isTyping && messages.length === 1 && (
                 <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', padding: '8px 0' }}>
                   <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', paddingLeft: '4px' }}>
                     Suggestions
