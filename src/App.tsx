@@ -73,7 +73,6 @@ function App() {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedNodeId) {
-        // Only trigger if we are not typing inside an input element
         if (document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
           handleDeleteNode(selectedNodeId)
         }
@@ -128,10 +127,201 @@ function App() {
     )
   }
 
+  // Run Parameter Limits Validation
+  const handleValidate = () => {
+    if (nodes.length === 0) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `val_${Date.now()}`,
+          sender: 'assistant',
+          text: "⚠️ **Calibration Validation Failed:**\n\nCanvas is empty. Add instruments before validating."
+        }
+      ])
+      return
+    }
+
+    const report: string[] = []
+    let hasErrors = false
+
+    nodes.forEach((node) => {
+      if (node.deviceId === 'nge100') {
+        const v = parseFloat(node.properties.voltage ?? 0)
+        const c = parseFloat(node.properties.current ?? 0)
+        if (v < 0 || v > 32) {
+          report.push(`- ❌ **NGE100 Voltage limit error**: Configured voltage of **${v} V** exceeds physical channel hardware thresholds (0.00V - 32.00V).`)
+          hasErrors = true
+        }
+        if (c < 0.05 || c > 3.0) {
+          report.push(`- ❌ **NGE100 Current limit error**: Limit of **${c} A** exceeds socket limits (0.05A - 3.00A).`)
+          hasErrors = true
+        }
+      } else if (node.deviceId === 'fpc1500') {
+        const cf = parseFloat(node.properties.centerFreq ?? 0)
+        const span = parseFloat(node.properties.span ?? 0)
+        if (cf < 0.005 || cf > 1500) {
+          report.push(`- ❌ **FPC1500 RF range error**: Center Frequency **${cf} MHz** is out of bounds (0.005 MHz - 1500.00 MHz).`)
+          hasErrors = true
+        }
+        if (span < 0.00001 || span > 1500) {
+          report.push(`- ❌ **FPC1500 Span scale error**: Sweep span of **${span} MHz** is out of bounds (10 Hz - 1500.00 MHz).`)
+          hasErrors = true
+        }
+      } else if (node.deviceId === 'rtb24') {
+        const scale = parseFloat(node.properties.ch1Scale ?? 0)
+        const tb = parseFloat(node.properties.timebase ?? 0)
+        if (scale < 0.001 || scale > 10) {
+          report.push(`- ❌ **RTB24 Scale error**: Vertical setting of **${scale} V** is out of bounds (1 mV - 10.00 V).`)
+          hasErrors = true
+        }
+        if (tb < 0.000001 || tb > 500000) {
+          report.push(`- ❌ **RTB24 Horizontal sweep error**: Timebase of **${tb} ms** exceeds horizontal sweep thresholds.`)
+          hasErrors = true
+        }
+      }
+    })
+
+    if (hasErrors) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `val_${Date.now()}`,
+          sender: 'assistant',
+          text: `⚠️ **Calibration Validation Failed:**\n\n${report.join('\n')}\n\n*Fix these parameters in the Inspector before generating the python calibration script.*`
+        }
+      ])
+    } else {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `val_${Date.now()}`,
+          sender: 'assistant',
+          text: "✅ **Calibration Validation Succeeded:**\n\n- All instrument parameters are within safe hardware thresholds.\n- Virtual ports are successfully linked.\n\n*Workbench is ready to compile python SCPI script.*"
+        }
+      ])
+    }
+  }
+
+  // Dynamic Python SCPI Code Generator
+  const handleGenerateScript = () => {
+    if (nodes.length === 0) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `script_${Date.now()}`,
+          sender: 'assistant',
+          text: "⚠️ **Script Generation Failed:**\n\nCanvas is empty. Describe a calibration flow to start."
+        }
+      ])
+      return
+    }
+
+    let code = `import socket
+import time
+
+def setup_workbench():
+    print("Initializing instrument calibration connections...")
+`
+
+    nodes.forEach((node) => {
+      if (node.deviceId === 'nge100') {
+        const v = parseFloat(node.properties.voltage ?? 12.0).toFixed(2)
+        const c = parseFloat(node.properties.current ?? 1.5).toFixed(2)
+        const active = node.properties.output ? 'ON' : 'OFF'
+        code += `
+    # Configure NGE100 Power Supply
+    nge = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    nge.connect(("192.168.8.101", 5025))
+    nge.sendall(b"*RST\\n")
+    nge.sendall(b"INST OUT1\\n")
+    nge.sendall(b"VOLT ${v}\\n")
+    nge.sendall(b"CURR ${c}\\n")
+    nge.sendall(b"OUTP ${active}\\n")
+    print("NGE100 configured: Voltage = ${v} V, Current = ${c} A, Output = ${active}")
+    nge.close()
+`
+      } else if (node.deviceId === 'fpc1500') {
+        const cf = (parseFloat(node.properties.centerFreq ?? 500.0) * 1e6).toFixed(0) // MHz to Hz
+        const span = (parseFloat(node.properties.span ?? 10.0) * 1e6).toFixed(0) // MHz to Hz
+        const ref = parseFloat(node.properties.refLevel ?? -10.0)
+        code += `
+    # Configure FPC1500 Spectrum Analyzer
+    fpc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    fpc.connect(("192.168.8.102", 5025))
+    fpc.sendall(b"*RST\\n")
+    fpc.sendall(b"FREQ:CENT ${cf}\\n")
+    fpc.sendall(b"FREQ:SPAN ${span}\\n")
+    fpc.sendall(b"DISP:TRAC:Y:RLEV ${ref}\\n")
+    print("FPC1500 configured: Center Freq = ${node.properties.centerFreq} MHz, Span = ${node.properties.span} MHz, Ref Level = ${ref} dBm")
+    fpc.close()
+`
+      } else if (node.deviceId === 'rtb24') {
+        const scale = parseFloat(node.properties.ch1Scale ?? 1.0).toFixed(3)
+        const tb = (parseFloat(node.properties.timebase ?? 1.0) * 1e-3).toExponential(3) // ms to s
+        const trig = node.properties.trigger ?? 'CH1'
+        code += `
+    # Configure RTB24 Oscilloscope
+    rtb = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    rtb.connect(("192.168.8.103", 5025))
+    rtb.sendall(b"*RST\\n")
+    rtb.sendall(b"TIM:SCAL ${tb}\\n")
+    rtb.sendall(b"CHAN1:STAT ON\\n")
+    rtb.sendall(b"CHAN1:SCAL ${scale}\\n")
+    rtb.sendall(b"TRIG:A:SOUR ${trig}\\n")
+    print("RTB24 configured: Timebase = ${node.properties.timebase} ms/div, CH1 Scale = ${scale} V/div, Trigger = ${trig}")
+    rtb.close()
+`
+      } else if (node.deviceId === 'hmf2550') {
+        const freq = (parseFloat(node.properties.frequency ?? 10.0) * 1000).toFixed(0) // kHz to Hz
+        const amp = parseFloat(node.properties.amplitude ?? 2.0).toFixed(2)
+        code += `
+    # Configure HMF2550 Function Generator
+    hmf = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    hmf.connect(("192.168.8.104", 5025))
+    hmf.sendall(b"*RST\\n")
+    hmf.sendall(b"FREQ ${freq}\\n")
+    hmf.sendall(b"VOLT ${amp}\\n")
+    hmf.sendall(b"OUTP ON\\n")
+    print("HMF2550 configured: Freq = ${node.properties.frequency} kHz, Amp = ${amp} Vpp")
+    hmf.close()
+`
+      }
+    })
+
+    code += `
+    print("All calibration protocols deployed successfully.")
+
+if __name__ == "__main__":
+    setup_workbench()
+`
+
+    let checklist = "### 📋 Hardware Setup Checklist\n\n"
+    nodes.forEach((node, idx) => {
+      checklist += `${idx + 1}. **${node.name}** (${node.type}):\n`
+      if (node.deviceId === 'nge100') {
+        checklist += `   - Connect DC supply cables to target inputs.\n   - Ensure supply limit is set to **${node.properties.voltage} V / ${node.properties.current} A**.\n`
+      } else if (node.deviceId === 'fpc1500') {
+        checklist += `   - Connect RF input to signal source/amplifier output.\n   - Set span to **${node.properties.span} MHz**.\n`
+      } else if (node.deviceId === 'rtb24') {
+        checklist += `   - Connect Probe 1 to channel 1 input.\n   - Trigger set to **${node.properties.trigger}**.\n`
+      } else if (node.deviceId === 'hmf2550') {
+        checklist += `   - Connect signal output to channel 1 scope input.\n   - Frequency set to **${node.properties.frequency} kHz**.\n`
+      }
+    })
+
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: `script_${Date.now()}`,
+        sender: 'assistant',
+        text: `💻 **Generated Python SCPI Script:**\n\n\`\`\`python\n${code}\n\`\`\`\n\n${checklist}`
+      }
+    ])
+  }
+
   // Mock AI Intent processing
   const processIntent = (intentText: string) => {
     const cleanedText = intentText.toLowerCase()
-    
     setIsTyping(true)
     
     setTimeout(() => {
@@ -272,10 +462,67 @@ function App() {
   }
 
   const handleCanvasClick = (e: React.MouseEvent) => {
-    // If clicking directly on the canvas surface, clear node selection
     if (e.target === canvasRef.current || (e.target as HTMLElement).classList.contains(styles.connectionsSvg)) {
       setSelectedNodeId(null)
     }
+  }
+
+  // Local helper to parse and render message text with markdown code block formatting
+  const renderMessageText = (text: string) => {
+    if (!text.includes('```')) {
+      return text.split('\n').map((line, i) => {
+        let content: React.ReactNode = line
+        if (line.includes('**')) {
+          const subParts = line.split('**')
+          content = subParts.map((sp, idx) => (idx % 2 === 1 ? <strong key={idx}>{sp}</strong> : sp))
+        }
+        return (
+          <p key={i} style={{ margin: '4px 0' }}>
+            {content}
+          </p>
+        )
+      })
+    }
+
+    const parts = text.split('```')
+    return parts.map((part, index) => {
+      if (index % 2 === 1) {
+        const codeContent = part.replace(/^(python|bash|javascript|json|html)\n/, '')
+        return (
+          <pre
+            key={index}
+            style={{
+              backgroundColor: '#0a0a0c',
+              border: '1px solid #222',
+              borderRadius: '6px',
+              padding: '10px 12px',
+              margin: '10px 0',
+              overflowX: 'auto',
+              fontFamily: 'var(--font-mono)',
+              fontSize: '11px',
+              lineHeight: '1.4',
+              color: '#d19a66',
+              whiteSpace: 'pre'
+            }}
+          >
+            <code>{codeContent}</code>
+          </pre>
+        )
+      }
+
+      return part.split('\n').map((line, i) => {
+        let content: React.ReactNode = line
+        if (line.includes('**')) {
+          const subParts = line.split('**')
+          content = subParts.map((sp, idx) => (idx % 2 === 1 ? <strong key={idx}>{sp}</strong> : sp))
+        }
+        return (
+          <p key={i} style={{ margin: '4px 0' }}>
+            {content}
+          </p>
+        )
+      })
+    })
   }
 
   // Selected Node metadata helper
@@ -297,7 +544,7 @@ function App() {
               </defs>
               <rect width="100%" height="100%" fill="url(#screen-grid)" />
               {/* Peak wave path */}
-              <path d="M 4 26 L 30 26 L 50 26 L 70 26 L 80 20 L 90 4 L 100 20 L 110 26 L 166 26" />
+              <path d="M 4 24 L 30 24 L 50 24 L 70 24 L 80 18 L 90 4 L 100 18 L 110 24 L 166 24" />
             </svg>
             <div className={nodeStyles.screenLabel}>
               CF: {center} MHz | SPAN: {span} MHz
@@ -327,14 +574,14 @@ function App() {
         )
       }
       case 'nge100': {
-        const voltage = node.properties.voltage ?? 12.0
-        const current = node.properties.current ?? 1.5
+        const voltage = parseFloat(node.properties.voltage ?? 12.0)
+        const current = parseFloat(node.properties.current ?? 1.5)
         const active = node.properties.output ?? false
         return (
           <div className={nodeStyles.nodeScreen}>
             <div className={nodeStyles.screenReadout}>
-              <span>{parseFloat(voltage).toFixed(2)} V</span>
-              <span>{parseFloat(current).toFixed(2)} A</span>
+              <span>{voltage.toFixed(2)} V</span>
+              <span>{current.toFixed(2)} A</span>
             </div>
             <div className={nodeStyles.screenLabel}>
               CH1: OUTPUT {active ? 'ON' : 'OFF'}
@@ -594,9 +841,12 @@ function App() {
           <button className={styles.toolbarButton} onClick={handleClear}>
             Clear
           </button>
-          <button className={styles.toolbarButton}>Validate</button>
+          <button className={styles.toolbarButton} onClick={handleValidate}>
+            Validate
+          </button>
           <button
             className={`${styles.toolbarButton} ${styles.toolbarButtonPrimary}`}
+            onClick={handleGenerateScript}
           >
             Generate Script
           </button>
@@ -767,7 +1017,7 @@ function App() {
                       msg.sender === 'user' ? styles.bubbleUser : styles.bubbleAssistant
                     }`}
                   >
-                    {msg.text}
+                    {renderMessageText(msg.text)}
                   </div>
                 </div>
               ))}
