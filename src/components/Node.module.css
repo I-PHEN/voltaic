@@ -30,7 +30,7 @@
 }
 
 .nodeCard:hover {
-  border-color: #383838;
+  border-color: var(--border-color-hover);
   box-shadow: 0 8px 22px rgba(0, 0, 0, 0.6);
   transform: translateY(-1px);
 }
@@ -100,14 +100,14 @@
 
 .deleteButton:hover {
   background-color: rgba(239, 68, 68, 0.15);
-  color: #ef4444;
+  color: var(--color-error);
 }
 
 /* LCD SCREEN SECTION */
 .nodeScreen {
   margin: 0 12px 10px 12px;
-  background-color: #08090d;
-  border: 1px solid #1e1e1e;
+  background-color: var(--bg-screen);
+  border: 1px solid var(--border-color);
   border-radius: 6px;
   padding: 4px 8px;
   display: flex;
@@ -144,7 +144,7 @@
 
 .screenLabel {
   font-size: 8px;
-  color: #555555;
+  color: var(--color-timestamp);
   text-transform: uppercase;
   margin-top: 1px;
   text-align: center;
@@ -157,7 +157,7 @@
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background-color: #121212;
+  background-color: var(--bg-port);
   border: 2px solid var(--border-color);
   cursor: crosshair;
   transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
@@ -183,13 +183,13 @@
 
 .portConnected {
   background-color: var(--color-primary);
-  border-color: #ffffff;
+  border-color: var(--color-text-on-primary);
 }
 
 .nodeBody {
   padding: 6px 12px;
   border-top: 1px solid var(--border-color);
-  background-color: rgba(255, 255, 255, 0.005);
+  background-color: var(--bg-subtle);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -210,10 +210,83 @@
   width: 5px;
   height: 5px;
   border-radius: 50%;
-  background-color: #737373;
+  background-color: var(--color-text-muted);
 }
 
 .statusDotActive {
-  background-color: #10b981;
+  background-color: var(--color-success);
   box-shadow: 0 0 6px rgba(16, 185, 129, 0.5);
 }
+
+/* Execution target glow animations */
+.nodeCardExecuting_nge100 {
+  border-color: #ff9100 !important;
+  box-shadow: 0 0 16px rgba(255, 145, 0, 0.45), 0 4px 16px rgba(0, 0, 0, 0.55);
+  animation: executingPulseNge 1.2s ease-in-out infinite alternate !important;
+}
+@keyframes executingPulseNge {
+  from { box-shadow: 0 0 6px rgba(255, 145, 0, 0.25), 0 4px 16px rgba(0, 0, 0, 0.55); }
+  to { box-shadow: 0 0 18px rgba(255, 145, 0, 0.65), 0 4px 20px rgba(0, 0, 0, 0.65); }
+}
+
+.nodeCardExecuting_fpc1500 {
+  border-color: #00e676 !important;
+  box-shadow: 0 0 16px rgba(0, 230, 118, 0.45), 0 4px 16px rgba(0, 0, 0, 0.55);
+  animation: executingPulseFpc 1.2s ease-in-out infinite alternate !important;
+}
+@keyframes executingPulseFpc {
+  from { box-shadow: 0 0 6px rgba(0, 230, 118, 0.25), 0 4px 16px rgba(0, 0, 0, 0.55); }
+  to { box-shadow: 0 0 18px rgba(0, 230, 118, 0.65), 0 4px 20px rgba(0, 0, 0, 0.65); }
+}
+
+.nodeCardExecuting_rtb24 {
+  border-color: #00e5ff !important;
+  box-shadow: 0 0 16px rgba(0, 229, 255, 0.45), 0 4px 16px rgba(0, 0, 0, 0.55);
+  animation: executingPulseRtb 1.2s ease-in-out infinite alternate !important;
+}
+@keyframes executingPulseRtb {
+  from { box-shadow: 0 0 6px rgba(0, 229, 255, 0.25), 0 4px 16px rgba(0, 0, 0, 0.55); }
+  to { box-shadow: 0 0 18px rgba(0, 229, 255, 0.65), 0 4px 20px rgba(0, 0, 0, 0.65); }
+}
+
+.nodeCardExecuting_hmf2550 {
+  border-color: #d500f9 !important;
+  box-shadow: 0 0 16px rgba(213, 0, 249, 0.45), 0 4px 16px rgba(0, 0, 0, 0.55);
+  animation: executingPulseHmf 1.2s ease-in-out infinite alternate !important;
+}
+@keyframes executingPulseHmf {
+  from { box-shadow: 0 0 6px rgba(213, 0, 249, 0.25), 0 4px 16px rgba(0, 0, 0, 0.55); }
+  to { box-shadow: 0 0 18px rgba(213, 0, 249, 0.65), 0 4px 20px rgba(0, 0, 0, 0.65); }
+}
+
+/* Validation error border styling and warning badge */
+.nodeCardError {
+  border-color: #ef4444 !important;
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.3), 0 4px 14px rgba(0, 0, 0, 0.45) !important;
+}
+
+.validationBadge {
+  position: absolute;
+  top: 10px;
+  right: 28px;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background-color: #ef4444;
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: help;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
+  animation: badgeBounce 1.5s ease infinite alternate;
+  z-index: 15;
+}
+
+@keyframes badgeBounce {
+  from { transform: translateY(0); }
+  to { transform: translateY(-2px); }
+}
+
