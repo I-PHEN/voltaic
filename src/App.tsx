@@ -804,7 +804,9 @@ if __name__ == "__main__":
       {/* LEFT SIDEBAR: Branding & Static Instrument List */}
       <aside className={styles.sidebar}>
         <div className={styles.logoSection}>
-          <div className={styles.logoIcon}>⚡</div>
+          <div className={styles.logoIcon}>
+            <img src="/favicon.svg" style={{ width: '16px', height: '16px' }} alt="Voltaic Logo" />
+          </div>
           <div className={styles.logoTextContainer}>
             <h1 className={styles.logoText}>VOLTAIC</h1>
             <span className={styles.logoSubtitle}>R&S Workflow Builder</span>
@@ -889,7 +891,9 @@ if __name__ == "__main__":
 
           {nodes.length === 0 ? (
             <div className={styles.emptyState}>
-              <div className={styles.emptyStateIcon}>⚡</div>
+              <div className={styles.emptyStateIcon}>
+                <img src="/favicon.svg" style={{ width: '28px', height: '28px' }} alt="Voltaic Logo" />
+              </div>
               <div className={styles.emptyStateText}>
                 Describe a test flow to begin
               </div>
