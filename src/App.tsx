@@ -58,14 +58,7 @@ const getFormattedTime = () => {
 
 function App() {
   const [chatInput, setChatInput] = useState('')
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: 'welcome',
-      sender: 'assistant',
-      text: "Hi! Describe a measurement and I'll build the workflow for you.",
-      timestamp: getFormattedTime()
-    }
-  ])
+  const [messages, setMessages] = useState<Message[]>([])
   const [isTyping, setIsTyping] = useState(false)
   const [nodes, setNodes] = useState<CanvasNode[]>([])
   const [connections, setConnections] = useState<Connection[]>([])
@@ -121,14 +114,7 @@ function App() {
 
   // Reset chat and clear canvas
   const handleNewChat = () => {
-    setMessages([
-      {
-        id: 'welcome',
-        sender: 'assistant',
-        text: "Hi! Describe a measurement and I'll build the workflow for you.",
-        timestamp: getFormattedTime()
-      }
-    ])
+    setMessages([])
     handleClear()
   }
 
@@ -947,45 +933,47 @@ if __name__ == "__main__":
           borderRightWidth: isLeftCollapsed ? '0px' : '1px'
         }}
       >
-        <div className={styles.logoSection}>
-          <div className={styles.logoIcon}>
-            <img src="/favicon.svg" style={{ width: '16px', height: '16px' }} alt="Voltaic Logo" />
+        <div style={{ width: '220px', height: '100%', display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
+          <div className={styles.logoSection}>
+            <div className={styles.logoIcon}>
+              <img src="/favicon.svg" style={{ width: '16px', height: '16px' }} alt="Voltaic Logo" />
+            </div>
+            <div className={styles.logoTextContainer}>
+              <h1 className={styles.logoText}>VOLTAIC</h1>
+              <span className={styles.logoSubtitle}>R&S Workflow Builder</span>
+            </div>
+            <button
+              className={styles.sidebarCollapseBtn}
+              onClick={() => setIsLeftCollapsed(true)}
+              title="Collapse Instruments"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="15 18 9 12 15 6"></polyline>
+              </svg>
+            </button>
           </div>
-          <div className={styles.logoTextContainer}>
-            <h1 className={styles.logoText}>VOLTAIC</h1>
-            <span className={styles.logoSubtitle}>R&S Workflow Builder</span>
-          </div>
-          <button
-            className={styles.sidebarCollapseBtn}
-            onClick={() => setIsLeftCollapsed(true)}
-            title="Collapse Instruments"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="15 18 9 12 15 6"></polyline>
-            </svg>
-          </button>
-        </div>
 
-        <h2 className={styles.sidebarTitle}>Instruments</h2>
-        <div className={styles.deviceList}>
-          {devices.map((device) => {
-            const typeColor = getDeviceColor(device.type)
-            return (
-              <div key={device.id} className={styles.deviceCard} style={{ cursor: 'default' }}>
-                <span className={styles.deviceName}>{device.name}</span>
-                <span className={styles.deviceBadge}>
-                  <span
-                    className={styles.badgeDot}
-                    style={{
-                      backgroundColor: typeColor,
-                      boxShadow: `0 0 6px ${typeColor}80`
-                    }}
-                  />
-                  {device.type}
-                </span>
-              </div>
-            )
-          })}
+          <h2 className={styles.sidebarTitle}>Instruments</h2>
+          <div className={styles.deviceList}>
+            {devices.map((device) => {
+              const typeColor = getDeviceColor(device.type)
+              return (
+                <div key={device.id} className={styles.deviceCard} style={{ cursor: 'default' }}>
+                  <span className={styles.deviceName}>{device.name}</span>
+                  <span className={styles.deviceBadge}>
+                    <span
+                      className={styles.badgeDot}
+                      style={{
+                        backgroundColor: typeColor,
+                        boxShadow: `0 0 6px ${typeColor}80`
+                      }}
+                    />
+                    {device.type}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
         </div>
       </aside>
 
@@ -1162,192 +1150,203 @@ if __name__ == "__main__":
           borderLeftWidth: isRightCollapsed ? '0px' : '1px'
         }}
       >
-        {selectedNode ? (
-          /* PROPERTY INSPECTOR VIEW */
-          <div className={inspectorStyles.inspectorContainer}>
-            <div className={inspectorStyles.inspectorHeader}>
-              <button
-                className={inspectorStyles.backButton}
-                onClick={() => setSelectedNodeId(null)}
-                title="Back to assistant"
-              >
-                ◀
-              </button>
-              <div className={inspectorStyles.headerTitles}>
-                <span className={inspectorStyles.title}>Properties: {selectedNode.name}</span>
-                <span className={inspectorStyles.subtitle}>{selectedNode.type}</span>
+        <div
+          style={{
+            width: isRightExpanded ? '550px' : '320px',
+            height: '100%',
+            display: 'flex',
+            flexDirection: 'column',
+            flexShrink: 0,
+            transition: 'width 0.4s cubic-bezier(0.16, 1, 0.3, 1)'
+          }}
+        >
+          {selectedNode ? (
+            /* PROPERTY INSPECTOR VIEW */
+            <div className={inspectorStyles.inspectorContainer}>
+              <div className={inspectorStyles.inspectorHeader}>
+                <button
+                  className={inspectorStyles.backButton}
+                  onClick={() => setSelectedNodeId(null)}
+                  title="Back to assistant"
+                >
+                  ◀
+                </button>
+                <div className={inspectorStyles.headerTitles}>
+                  <span className={inspectorStyles.title}>Properties: {selectedNode.name}</span>
+                  <span className={inspectorStyles.subtitle}>{selectedNode.type}</span>
+                </div>
+                <div className={styles.headerActions}>
+                  <button
+                    onClick={() => setIsRightExpanded(!isRightExpanded)}
+                    className={styles.headerActionBtn}
+                    title={isRightExpanded ? "Restore width" : "Expand width"}
+                  >
+                    {isRightExpanded ? (
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M4 14h6v6M20 10h-6V4M14 10l7-7M10 14l-7 7"/>
+                      </svg>
+                    ) : (
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/>
+                      </svg>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => setIsRightCollapsed(true)}
+                    className={styles.headerActionBtn}
+                    title="Collapse panel"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="9 18 15 12 9 6"></polyline>
+                    </svg>
+                  </button>
+                </div>
               </div>
-              <div className={styles.headerActions}>
-                <button
-                  onClick={() => setIsRightExpanded(!isRightExpanded)}
-                  className={styles.headerActionBtn}
-                  title={isRightExpanded ? "Restore width" : "Expand width"}
-                >
-                  {isRightExpanded ? (
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M4 14h6v6M20 10h-6V4M14 10l7-7M10 14l-7 7"/>
-                    </svg>
-                  ) : (
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/>
-                    </svg>
-                  )}
-                </button>
-                <button
-                  onClick={() => setIsRightCollapsed(true)}
-                  className={styles.headerActionBtn}
-                  title="Collapse panel"
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="9 18 15 12 9 6"></polyline>
-                  </svg>
-                </button>
-              </div>
-            </div>
-            <div className={inspectorStyles.inspectorContent}>
-              {renderInspector(selectedNode)}
-            </div>
-          </div>
-        ) : (
-          /* ASSISTANT CHAT VIEW */
-          <>
-            <div className={styles.chatTitle}>
-              <span className={styles.chatIndicator} />
-              <span>Voltaic Assistant</span>
-              {messages.length > 1 && (
-                <button onClick={handleNewChat} className={styles.newChatButton}>
-                  New Chat
-                </button>
-              )}
-              <div className={styles.headerActions}>
-                <button
-                  onClick={() => setIsRightExpanded(!isRightExpanded)}
-                  className={styles.headerActionBtn}
-                  title={isRightExpanded ? "Restore width" : "Expand width"}
-                >
-                  {isRightExpanded ? (
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M4 14h6v6M20 10h-6V4M14 10l7-7M10 14l-7 7"/>
-                    </svg>
-                  ) : (
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/>
-                    </svg>
-                  )}
-                </button>
-                <button
-                  onClick={() => setIsRightCollapsed(true)}
-                  className={styles.headerActionBtn}
-                  title="Collapse panel"
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="9 18 15 12 9 6"></polyline>
-                  </svg>
-                </button>
+              <div className={inspectorStyles.inspectorContent}>
+                {renderInspector(selectedNode)}
               </div>
             </div>
-            
-            <div className={styles.messageList}>
-              {messages.map((msg) => (
-                <div
-                  key={msg.id}
-                  className={`${styles.messageItem} ${
-                    msg.sender === 'user' ? styles.messageUser : styles.messageAssistant
-                  }`}
-                >
+          ) : (
+            /* ASSISTANT CHAT VIEW */
+            <>
+              <div className={styles.chatTitle}>
+                <span className={styles.chatIndicator} />
+                <span>Voltaic Assistant</span>
+                {messages.length > 0 && (
+                  <button onClick={handleNewChat} className={styles.newChatButton}>
+                    New Chat
+                  </button>
+                )}
+                <div className={styles.headerActions}>
+                  <button
+                    onClick={() => setIsRightExpanded(!isRightExpanded)}
+                    className={styles.headerActionBtn}
+                    title={isRightExpanded ? "Restore width" : "Expand width"}
+                  >
+                    {isRightExpanded ? (
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M4 14h6v6M20 10h-6V4M14 10l7-7M10 14l-7 7"/>
+                      </svg>
+                    ) : (
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/>
+                      </svg>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => setIsRightCollapsed(true)}
+                    className={styles.headerActionBtn}
+                    title="Collapse panel"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="9 18 15 12 9 6"></polyline>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              
+              <div className={styles.messageList}>
+                {messages.map((msg) => (
                   <div
-                    className={`${styles.messageBubble} ${
-                      msg.sender === 'user' ? styles.bubbleUser : styles.bubbleAssistant
+                    key={msg.id}
+                    className={`${styles.messageItem} ${
+                      msg.sender === 'user' ? styles.messageUser : styles.messageAssistant
                     }`}
                   >
-                    {renderMessageText(msg.text)}
+                    <div
+                      className={`${styles.messageBubble} ${
+                        msg.sender === 'user' ? styles.bubbleUser : styles.bubbleAssistant
+                      }`}
+                    >
+                      {renderMessageText(msg.text)}
+                    </div>
+                    <span className={styles.messageTimestamp}>{msg.timestamp}</span>
                   </div>
-                  <span className={styles.messageTimestamp}>{msg.timestamp}</span>
-                </div>
-              ))}
-              
-              {/* Typing indicator */}
-              {isTyping && (
-                <div className={`${styles.messageItem} ${styles.messageAssistant}`}>
-                  <div className={`${styles.messageBubble} ${styles.bubbleAssistant}`} style={{ display: 'flex', gap: '3px', padding: '10px 14px' }}>
-                    <span style={{ width: '4px', height: '4px', background: '#888', borderRadius: '50%', animation: 'bounce 0.6s infinite alternate' }} />
-                    <span style={{ width: '4px', height: '4px', background: '#888', borderRadius: '50%', animation: 'bounce 0.6s infinite alternate 0.2s' }} />
-                    <span style={{ width: '4px', height: '4px', background: '#888', borderRadius: '50%', animation: 'bounce 0.6s infinite alternate 0.4s' }} />
+                ))}
+                
+                {/* Typing indicator */}
+                {isTyping && (
+                  <div className={`${styles.messageItem} ${styles.messageAssistant}`}>
+                    <div className={`${styles.messageBubble} ${styles.bubbleAssistant}`} style={{ display: 'flex', gap: '3px', padding: '10px 14px' }}>
+                      <span style={{ width: '4px', height: '4px', background: '#888', borderRadius: '50%', animation: 'bounce 0.6s infinite alternate' }} />
+                      <span style={{ width: '4px', height: '4px', background: '#888', borderRadius: '50%', animation: 'bounce 0.6s infinite alternate 0.2s' }} />
+                      <span style={{ width: '4px', height: '4px', background: '#888', borderRadius: '50%', animation: 'bounce 0.6s infinite alternate 0.4s' }} />
+                    </div>
                   </div>
-                </div>
-              )}
-              
-              {/* Suggestion Chips */}
-              {!isTyping && messages.length === 1 && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '8px 0' }}>
-                  <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', paddingLeft: '4px' }}>
-                    Suggestions
-                  </span>
-                  <button
-                    onClick={() => handleSuggestionClick('Measure SNR of amplifier at 500 MHz')}
-                    style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--color-text)', borderRadius: '6px', padding: '8px 10px', fontSize: '12px', textAlign: 'left', cursor: 'pointer', outline: 'none', transition: 'all 0.15s' }}
-                    onMouseOver={(e) => { e.currentTarget.style.borderColor = '#383838'; e.currentTarget.style.backgroundColor = 'var(--bg-card-hover)'; }}
-                    onMouseOut={(e) => { e.currentTarget.style.borderColor = 'var(--border-color)'; e.currentTarget.style.backgroundColor = 'var(--bg-card)'; }}
-                  >
-                    Measure SNR of amplifier at 500 MHz
-                  </button>
-                  <button
-                    onClick={() => handleSuggestionClick('Measure 10 kHz sine wave parameters')}
-                    style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--color-text)', borderRadius: '6px', padding: '8px 10px', fontSize: '12px', textAlign: 'left', cursor: 'pointer', outline: 'none', transition: 'all 0.15s' }}
-                    onMouseOver={(e) => { e.currentTarget.style.borderColor = '#383838'; e.currentTarget.style.backgroundColor = 'var(--bg-card-hover)'; }}
-                    onMouseOut={(e) => { e.currentTarget.style.borderColor = 'var(--border-color)'; e.currentTarget.style.backgroundColor = 'var(--bg-card)'; }}
-                  >
-                    Measure 10 kHz sine wave parameters
-                  </button>
-                </div>
-              )}
-              
-              <div ref={messageEndRef} />
-            </div>
-            
-            <form onSubmit={handleSend} className={styles.unifiedInputWrapper}>
-              <textarea
-                ref={textareaRef}
-                className={styles.unifiedTextInput}
-                placeholder="Describe a measurement flow..."
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSend(e);
-                  }
-                }}
-                rows={1}
-              />
-              <div className={styles.inputActionContainer}>
-                <button
-                  type="button"
-                  className={`${styles.integratedMicBtn} ${isListening ? styles.integratedMicBtnActive : ''}`}
-                  onClick={toggleSpeech}
-                  title={isListening ? 'Stop listening' : 'Start voice mode'}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
-                    <path d="M19 10v1a7 7 0 0 1-14 0v-1"/>
-                    <line x1="12" y1="19" x2="12" y2="22"/>
-                  </svg>
-                </button>
-                <button
-                  type="submit"
-                  className={styles.integratedSendBtn}
-                  disabled={!chatInput.trim()}
-                  title="Send message"
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <line x1="5" y1="12" x2="19" y2="12"></line>
-                    <polyline points="12 5 19 12 12 19"></polyline>
-                  </svg>
-                </button>
+                )}
+                
+                {/* Suggestion Chips */}
+                {!isTyping && messages.length === 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '8px 0' }}>
+                    <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', paddingLeft: '4px' }}>
+                      Suggestions
+                    </span>
+                    <button
+                      onClick={() => handleSuggestionClick('Measure SNR of amplifier at 500 MHz')}
+                      style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--color-text)', borderRadius: '6px', padding: '8px 10px', fontSize: '12px', textAlign: 'left', cursor: 'pointer', outline: 'none', transition: 'all 0.15s' }}
+                      onMouseOver={(e) => { e.currentTarget.style.borderColor = '#383838'; e.currentTarget.style.backgroundColor = 'var(--bg-card-hover)'; }}
+                      onMouseOut={(e) => { e.currentTarget.style.borderColor = 'var(--border-color)'; e.currentTarget.style.backgroundColor = 'var(--bg-card)'; }}
+                    >
+                      Measure SNR of amplifier at 500 MHz
+                    </button>
+                    <button
+                      onClick={() => handleSuggestionClick('Measure 10 kHz sine wave parameters')}
+                      style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--color-text)', borderRadius: '6px', padding: '8px 10px', fontSize: '12px', textAlign: 'left', cursor: 'pointer', outline: 'none', transition: 'all 0.15s' }}
+                      onMouseOver={(e) => { e.currentTarget.style.borderColor = '#383838'; e.currentTarget.style.backgroundColor = 'var(--bg-card-hover)'; }}
+                      onMouseOut={(e) => { e.currentTarget.style.borderColor = 'var(--border-color)'; e.currentTarget.style.backgroundColor = 'var(--bg-card)'; }}
+                    >
+                      Measure 10 kHz sine wave parameters
+                    </button>
+                  </div>
+                )}
+                
+                <div ref={messageEndRef} />
               </div>
-            </form>
-          </>
-        )}
+              
+              <form onSubmit={handleSend} className={styles.unifiedInputWrapper}>
+                <textarea
+                  ref={textareaRef}
+                  className={styles.unifiedTextInput}
+                  placeholder="Describe a measurement flow..."
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSend(e);
+                    }
+                  }}
+                  rows={1}
+                />
+                <div className={styles.inputActionContainer}>
+                  <button
+                    type="button"
+                    className={`${styles.integratedMicBtn} ${isListening ? styles.integratedMicBtnActive : ''}`}
+                    onClick={toggleSpeech}
+                    title={isListening ? 'Stop listening' : 'Start voice mode'}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+                      <path d="M19 10v1a7 7 0 0 1-14 0v-1"/>
+                      <line x1="12" y1="19" x2="12" y2="22"/>
+                    </svg>
+                  </button>
+                  <button
+                    type="submit"
+                    className={styles.integratedSendBtn}
+                    disabled={!chatInput.trim()}
+                    title="Send message"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="5" y1="12" x2="19" y2="12"></line>
+                      <polyline points="12 5 19 12 12 19"></polyline>
+                    </svg>
+                  </button>
+                </div>
+              </form>
+            </>
+          )}
+        </div>
       </section>
     </div>
   )
