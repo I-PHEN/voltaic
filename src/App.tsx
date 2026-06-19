@@ -75,6 +75,11 @@ function App() {
   
   // Voice state
   const [isListening, setIsListening] = useState(false)
+
+  // Collapsible & expandable panel states
+  const [isLeftCollapsed, setIsLeftCollapsed] = useState(false)
+  const [isRightCollapsed, setIsRightCollapsed] = useState(false)
+  const [isRightExpanded, setIsRightExpanded] = useState(false)
   const recognitionRef = useRef<any>(null)
   
   const messageEndRef = useRef<HTMLDivElement>(null)
@@ -925,7 +930,14 @@ if __name__ == "__main__":
   return (
     <div className={styles.appContainer}>
       {/* LEFT SIDEBAR: Branding & Static Instrument List */}
-      <aside className={styles.sidebar}>
+      <aside
+        className={styles.sidebar}
+        style={{
+          width: isLeftCollapsed ? '0px' : '220px',
+          minWidth: isLeftCollapsed ? '0px' : '220px',
+          borderRightWidth: isLeftCollapsed ? '0px' : '1px'
+        }}
+      >
         <div className={styles.logoSection}>
           <div className={styles.logoIcon}>
             <img src="/favicon.svg" style={{ width: '16px', height: '16px' }} alt="Voltaic Logo" />
@@ -934,6 +946,15 @@ if __name__ == "__main__":
             <h1 className={styles.logoText}>VOLTAIC</h1>
             <span className={styles.logoSubtitle}>R&S Workflow Builder</span>
           </div>
+          <button
+            className={styles.sidebarCollapseBtn}
+            onClick={() => setIsLeftCollapsed(true)}
+            title="Collapse Instruments"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="15 18 9 12 15 6"></polyline>
+            </svg>
+          </button>
         </div>
 
         <h2 className={styles.sidebarTitle}>Instruments</h2>
@@ -983,6 +1004,36 @@ if __name__ == "__main__":
           className={styles.canvasSurface}
           onClick={handleCanvasClick}
         >
+          {isLeftCollapsed && (
+            <button
+              className={styles.floatingExpandTabLeft}
+              onClick={(e) => {
+                e.stopPropagation()
+                setIsLeftCollapsed(false)
+              }}
+              title="Show Instruments"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="9 18 15 12 9 6"></polyline>
+              </svg>
+            </button>
+          )}
+
+          {isRightCollapsed && (
+            <button
+              className={styles.floatingExpandTabRight}
+              onClick={(e) => {
+                e.stopPropagation()
+                setIsRightCollapsed(false)
+              }}
+              title="Show Assistant"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="15 18 9 12 15 6"></polyline>
+              </svg>
+            </button>
+          )}
+
           {/* SVG CONNECTIONS OVERLAY */}
           <svg className={styles.connectionsSvg}>
             {connections.map((conn) => {
@@ -1094,7 +1145,14 @@ if __name__ == "__main__":
       </main>
 
       {/* RIGHT PANEL: Chat Assistant OR Property Inspector */}
-      <section className={styles.chatPanel}>
+      <section
+        className={styles.chatPanel}
+        style={{
+          width: isRightCollapsed ? '0px' : (isRightExpanded ? '550px' : '320px'),
+          minWidth: isRightCollapsed ? '0px' : (isRightExpanded ? '550px' : '320px'),
+          borderLeftWidth: isRightCollapsed ? '0px' : '1px'
+        }}
+      >
         {selectedNode ? (
           /* PROPERTY INSPECTOR VIEW */
           <div className={inspectorStyles.inspectorContainer}>
@@ -1109,6 +1167,32 @@ if __name__ == "__main__":
               <div className={inspectorStyles.headerTitles}>
                 <span className={inspectorStyles.title}>Properties: {selectedNode.name}</span>
                 <span className={inspectorStyles.subtitle}>{selectedNode.type}</span>
+              </div>
+              <div className={styles.headerActions}>
+                <button
+                  onClick={() => setIsRightExpanded(!isRightExpanded)}
+                  className={styles.headerActionBtn}
+                  title={isRightExpanded ? "Restore width" : "Expand width"}
+                >
+                  {isRightExpanded ? (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M4 14h6v6M20 10h-6V4M14 10l7-7M10 14l-7 7"/>
+                    </svg>
+                  ) : (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/>
+                    </svg>
+                  )}
+                </button>
+                <button
+                  onClick={() => setIsRightCollapsed(true)}
+                  className={styles.headerActionBtn}
+                  title="Collapse panel"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="9 18 15 12 9 6"></polyline>
+                  </svg>
+                </button>
               </div>
             </div>
             <div className={inspectorStyles.inspectorContent}>
@@ -1126,6 +1210,32 @@ if __name__ == "__main__":
                   New Chat
                 </button>
               )}
+              <div className={styles.headerActions}>
+                <button
+                  onClick={() => setIsRightExpanded(!isRightExpanded)}
+                  className={styles.headerActionBtn}
+                  title={isRightExpanded ? "Restore width" : "Expand width"}
+                >
+                  {isRightExpanded ? (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M4 14h6v6M20 10h-6V4M14 10l7-7M10 14l-7 7"/>
+                    </svg>
+                  ) : (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/>
+                    </svg>
+                  )}
+                </button>
+                <button
+                  onClick={() => setIsRightCollapsed(true)}
+                  className={styles.headerActionBtn}
+                  title="Collapse panel"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="9 18 15 12 9 6"></polyline>
+                  </svg>
+                </button>
+              </div>
             </div>
             
             <div className={styles.messageList}>
@@ -1190,25 +1300,35 @@ if __name__ == "__main__":
               <div ref={messageEndRef} />
             </div>
             
-            <form onSubmit={handleSend} className={styles.inputArea}>
-              <button
-                type="button"
-                className={`${styles.micButton} ${isListening ? styles.micButtonActive : ''}`}
-                onClick={toggleSpeech}
-                title={isListening ? 'Stop listening' : 'Start voice mode'}
-              >
-                🎙️
-              </button>
+            <form onSubmit={handleSend} className={styles.unifiedInputWrapper}>
               <input
                 type="text"
-                className={styles.textInput}
+                className={styles.unifiedTextInput}
                 placeholder="Describe a measurement flow..."
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
               />
-              <button type="submit" className={styles.sendButton}>
-                Send
-              </button>
+              <div className={styles.inputActionContainer}>
+                <button
+                  type="button"
+                  className={`${styles.integratedMicBtn} ${isListening ? styles.integratedMicBtnActive : ''}`}
+                  onClick={toggleSpeech}
+                  title={isListening ? 'Stop listening' : 'Start voice mode'}
+                >
+                  🎙️
+                </button>
+                <button
+                  type="submit"
+                  className={styles.integratedSendBtn}
+                  disabled={!chatInput.trim()}
+                  title="Send message"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="22" y1="2" x2="11" y2="13"></line>
+                    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                  </svg>
+                </button>
+              </div>
             </form>
           </>
         )}

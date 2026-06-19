@@ -60,6 +60,8 @@
   border-right: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+  transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1), min-width 0.3s cubic-bezier(0.16, 1, 0.3, 1), border-width 0.3s;
 }
 
 .sidebarTitle {
@@ -272,6 +274,7 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1), min-width 0.3s cubic-bezier(0.16, 1, 0.3, 1), border-width 0.3s;
 }
 
 .chatTitle {
@@ -481,6 +484,186 @@
   background-color: var(--bg-chat);
   display: flex;
   gap: 8px;
+}
+
+.unifiedInputWrapper {
+  margin: 14px 16px 18px 16px;
+  padding: 6px 6px 6px 14px;
+  background-color: var(--bg-canvas);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.2s ease;
+}
+
+.unifiedInputWrapper:focus-within {
+  border-color: #3f3f3f;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.02), 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+.unifiedTextInput {
+  flex: 1;
+  border: none;
+  background: transparent;
+  outline: none;
+  color: var(--color-text);
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 4px 0;
+}
+
+.unifiedTextInput::placeholder {
+  color: rgba(255, 255, 255, 0.2);
+}
+
+.inputActionContainer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.integratedMicBtn {
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: var(--color-text-muted);
+  font-size: 13px;
+  outline: none;
+}
+
+.integratedMicBtn:hover {
+  color: var(--color-text);
+  background-color: var(--bg-card-hover);
+}
+
+.integratedMicBtnActive {
+  background-color: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  animation: micPulse 1.2s infinite ease-in-out;
+}
+
+.integratedSendBtn {
+  background-color: var(--color-primary);
+  border: none;
+  border-radius: 50%;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: #ffffff;
+  outline: none;
+}
+
+.integratedSendBtn:hover {
+  background-color: var(--color-primary-hover);
+}
+
+.integratedSendBtn:disabled {
+  background-color: transparent;
+  color: var(--color-text-muted);
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.sidebarCollapseBtn {
+  background: transparent;
+  border: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+  outline: none;
+  margin-left: auto;
+}
+
+.sidebarCollapseBtn:hover {
+  color: var(--color-text);
+  background-color: var(--bg-card-hover);
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.headerActionBtn {
+  background: transparent;
+  border: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+  outline: none;
+}
+
+.headerActionBtn:hover {
+  color: var(--color-text);
+  background-color: var(--bg-card-hover);
+}
+
+.floatingExpandTabLeft,
+.floatingExpandTabRight {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 32px;
+  height: 32px;
+  background-color: var(--bg-sidebar);
+  border: 1px solid var(--border-color);
+  border-radius: 50%;
+  color: var(--color-text);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  z-index: 100;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  outline: none;
+}
+
+.floatingExpandTabLeft {
+  left: 12px;
+}
+
+.floatingExpandTabRight {
+  right: 12px;
+}
+
+.floatingExpandTabLeft:hover {
+  transform: translateY(-50%) scale(1.1) translateX(3px);
+  border-color: var(--color-primary);
+  box-shadow: 0 4px 16px rgba(0, 145, 255, 0.25);
+}
+
+.floatingExpandTabRight:hover {
+  transform: translateY(-50%) scale(1.1) translateX(-3px);
+  border-color: var(--color-primary);
+  box-shadow: 0 4px 16px rgba(0, 145, 255, 0.25);
 }
 
 .textInput {
