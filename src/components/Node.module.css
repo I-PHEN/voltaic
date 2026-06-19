@@ -1,0 +1,112 @@
+.nodeCard {
+  position: absolute;
+  width: 175px;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  cursor: grab;
+  user-select: none;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: column;
+  transition: box-shadow 0.15s ease, border-color 0.15s ease;
+  overflow: hidden;
+  z-index: 10;
+}
+
+.nodeCard:hover {
+  border-color: #3f3f3f;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.55);
+}
+
+.nodeCard:active {
+  cursor: grabbing;
+}
+
+.nodeCardDragging {
+  opacity: 0.3;
+}
+
+.nodeHeader {
+  padding: 12px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.nodeName {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-text);
+  padding-right: 16px;
+}
+
+.nodeType {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.deleteButton {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: all 0.15s ease;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.nodeCard:hover .deleteButton {
+  opacity: 1;
+}
+
+.deleteButton:hover {
+  background-color: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+.nodeBody {
+  padding: 8px 12px;
+  border-top: 1px solid var(--border-color);
+  background-color: rgba(255, 255, 255, 0.005);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.statusIndicator {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.statusDot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background-color: #737373;
+}
+
+.statusDotActive {
+  background-color: #10b981;
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.5);
+}

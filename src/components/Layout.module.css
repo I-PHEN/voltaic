@@ -13,21 +13,21 @@
   align-items: center;
   gap: 12px;
   border-bottom: 1px solid var(--border-color);
-  background: linear-gradient(180deg, rgba(0, 145, 255, 0.04) 0%, transparent 100%);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.01) 0%, transparent 100%);
 }
 
 .logoIcon {
   width: 32px;
   height: 32px;
-  border-radius: 8px;
-  background: rgba(0, 145, 255, 0.1);
-  border: 1px solid rgba(0, 145, 255, 0.25);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-color);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 16px;
+  font-size: 14px;
   color: var(--color-primary);
-  box-shadow: 0 0 12px rgba(0, 145, 255, 0.2);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
 }
 
 .logoTextContainer {
@@ -36,7 +36,7 @@
 }
 
 .logoText {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 800;
   letter-spacing: 0.1em;
   color: var(--color-text);
@@ -85,23 +85,24 @@
   background-color: var(--bg-card);
   border: 1px solid var(--border-color);
   border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  cursor: grab;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   display: flex;
   flex-direction: column;
   gap: 8px;
+  user-select: none;
 }
 
 .deviceCard:hover {
   background-color: var(--bg-card-hover);
-  border-color: rgba(0, 145, 255, 0.4);
-  transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+  border-color: #333333;
+  transform: translateY(-1px);
 }
 
 .deviceCard:active {
-  transform: translateY(0);
-  background-color: var(--bg-card);
+  cursor: grabbing;
+  border-color: var(--color-primary);
+  background-color: var(--bg-card-hover);
 }
 
 .deviceName {
@@ -154,7 +155,7 @@
 }
 
 .toolbarButton {
-  padding: 7px 14px;
+  padding: 6px 12px;
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
@@ -169,7 +170,7 @@
 
 .toolbarButton:hover {
   background-color: var(--bg-card-hover);
-  border-color: var(--color-text-muted);
+  border-color: #3f3f3f;
 }
 
 .toolbarButtonPrimary {
@@ -193,45 +194,59 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
 }
 
+.canvasSurfaceDragging {
+  background-color: #151515;
+  box-shadow: inset 0 0 40px rgba(0, 145, 255, 0.03);
+}
+
+/* EMPTY STATE DASHED CARD */
 .emptyState {
   text-align: center;
   color: var(--color-text-muted);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 14px;
-  animation: fadeIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+  justify-content: center;
+  width: 200px;
+  height: 140px;
+  border: 1.5px dashed var(--border-color);
+  border-radius: 12px;
+  cursor: default;
+  transition: all 0.25s ease-in-out;
+  padding: 16px;
+  user-select: none;
+  animation: fadeIn 0.4s ease-out;
 }
 
 .emptyStateIcon {
-  width: 64px;
-  height: 64px;
-  border-radius: 16px;
-  background: linear-gradient(135deg, rgba(0, 145, 255, 0.03) 0%, rgba(255, 255, 255, 0.01) 100%);
-  border: 1px dashed var(--border-color);
+  color: var(--color-text-muted);
+  font-size: 20px;
+  margin-bottom: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--color-primary);
-  font-size: 22px;
-  box-shadow: inset 0 0 16px rgba(0, 0, 0, 0.5);
-  transition: all 0.3s ease;
+  transition: all 0.25s ease-in-out;
+}
+
+.emptyState:hover {
+  border-color: #444444;
+  background-color: rgba(255, 255, 255, 0.005);
 }
 
 .emptyState:hover .emptyStateIcon {
-  border-color: var(--color-primary);
-  color: var(--color-primary-hover);
-  box-shadow: 0 0 15px rgba(0, 145, 255, 0.15), inset 0 0 16px rgba(0, 0, 0, 0.5);
-  transform: scale(1.05);
+  color: var(--color-text);
+  transform: translateY(-2px);
 }
 
 .emptyStateText {
-  font-size: 13px;
-  font-weight: 500;
-  letter-spacing: 0.02em;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
   color: var(--color-text-muted);
+  text-transform: uppercase;
 }
 
 /* RIGHT CHAT PANEL */
@@ -264,7 +279,7 @@
   height: 6px;
   border-radius: 50%;
   background-color: #10b981;
-  box-shadow: 0 0 8px rgba(16, 185, 129, 0.6);
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.4);
 }
 
 .messageList {
@@ -301,8 +316,8 @@
 }
 
 .messageBubble {
-  padding: 12px 14px;
-  border-radius: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
   font-size: 13px;
   line-height: 1.5;
   word-wrap: break-word;
@@ -342,12 +357,11 @@
 }
 
 .textInput:focus {
-  border-color: rgba(0, 145, 255, 0.6);
-  box-shadow: 0 0 8px rgba(0, 145, 255, 0.15);
+  border-color: #3f3f3f;
 }
 
 .textInput::placeholder {
-  color: rgba(148, 163, 184, 0.25);
+  color: rgba(255, 255, 255, 0.15);
 }
 
 .sendButton {
@@ -374,7 +388,7 @@
 @keyframes fadeIn {
   from {
     opacity: 0;
-    transform: translateY(6px);
+    transform: translateY(4px);
   }
   to {
     opacity: 1;

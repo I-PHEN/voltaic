@@ -1,6 +1,16 @@
 import { useState } from 'react'
 import styles from './components/Layout.module.css'
+import nodeStyles from './components/Node.module.css'
 import { devices } from './data/devices'
+
+interface CanvasNode {
+  id: string;
+  deviceId: string;
+  name: string;
+  type: string;
+  x: number;
+  y: number;
+}
 
 const getDeviceColor = (type: string) => {
   switch (type) {
@@ -23,11 +33,97 @@ const getDeviceColor = (type: string) => {
 
 function App() {
   const [chatInput, setChatInput] = useState('')
+  const [nodes, setNodes] = useState<CanvasNode[]>([])
+  const [isDraggingOver, setIsDraggingOver] = useState(false)
+
+  // Clear all nodes
+  const handleClear = () => {
+    setNodes([])
+  }
+
+  // Handle Drag Start from Sidebar Card
+  const handleSidebarDragStart = (e: React.DragEvent, deviceId: string) => {
+    e.dataTransfer.setData('source', 'sidebar')
+    e.dataTransfer.setData('device_id', deviceId)
+  }
+
+  // Handle Drag Start from existing Canvas Node
+  const handleNodeDragStart = (e: React.DragEvent, nodeId: string) => {
+    e.dataTransfer.setData('source', 'canvas')
+    e.dataTransfer.setData('node_id', nodeId)
+    
+    // Store drag offset relative to the node's top-left corner to avoid snapping
+    const rect = e.currentTarget.getBoundingClientRect()
+    const offsetX = e.clientX - rect.left
+    const offsetY = e.clientY - rect.top
+    e.dataTransfer.setData('offset_x', offsetX.toString())
+    e.dataTransfer.setData('offset_y', offsetY.toString())
+  }
+
+  // Handle Drag Over Canvas
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDraggingOver(true)
+  }
+
+  // Handle Drag Leave Canvas
+  const handleDragLeave = () => {
+    setIsDraggingOver(false)
+  }
+
+  // Handle Drop on Canvas
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDraggingOver(false)
+
+    const source = e.dataTransfer.getData('source')
+    const rect = e.currentTarget.getBoundingClientRect()
+    const dropX = e.clientX - rect.left
+    const dropY = e.clientY - rect.top
+
+    if (source === 'sidebar') {
+      const deviceId = e.dataTransfer.getData('device_id')
+      const device = devices.find((d) => d.id === deviceId)
+      if (device) {
+        // Place new node centered under cursor
+        const newNode: CanvasNode = {
+          id: `${deviceId}_${Date.now()}`,
+          deviceId: device.id,
+          name: device.name,
+          type: device.type,
+          x: Math.max(10, dropX - 87), // keep within reasonable bounds
+          y: Math.max(10, dropY - 40)
+        }
+        setNodes((prev) => [...prev, newNode])
+      }
+    } else if (source === 'canvas') {
+      const nodeId = e.dataTransfer.getData('node_id')
+      const offsetX = parseFloat(e.dataTransfer.getData('offset_x') || '0')
+      const offsetY = parseFloat(e.dataTransfer.getData('offset_y') || '0')
+
+      // Reposition existing node
+      setNodes((prev) =>
+        prev.map((n) =>
+          n.id === nodeId
+            ? {
+                ...n,
+                x: Math.max(10, dropX - offsetX),
+                y: Math.max(10, dropY - offsetY)
+              }
+            : n
+        )
+      )
+    }
+  }
+
+  // Delete a specific node
+  const handleDeleteNode = (nodeId: string) => {
+    setNodes((prev) => prev.filter((n) => n.id !== nodeId))
+  }
 
   const handleSend = (e: React.FormEvent) => {
     e.preventDefault()
     if (!chatInput.trim()) return
-    // Simple mock send for V1 layout
     setChatInput('')
   }
 
@@ -35,7 +131,6 @@ function App() {
     <div className={styles.appContainer}>
       {/* LEFT SIDEBAR: Branding Header & Instruments List */}
       <aside className={styles.sidebar}>
-        {/* Brand Logo Header */}
         <div className={styles.logoSection}>
           <div className={styles.logoIcon}>⚡</div>
           <div className={styles.logoTextContainer}>
@@ -49,12 +144,20 @@ function App() {
           {devices.map((device) => {
             const typeColor = getDeviceColor(device.type)
             return (
-              <div key={device.id} className={styles.deviceCard}>
+              <div
+                key={device.id}
+                className={styles.deviceCard}
+                draggable
+                onDragStart={(e) => handleSidebarDragStart(e, device.id)}
+              >
                 <span className={styles.deviceName}>{device.name}</span>
                 <span className={styles.deviceBadge}>
-                  <span 
-                    className={styles.badgeDot} 
-                    style={{ backgroundColor: typeColor, boxShadow: `0 0 6px ${typeColor}80` }}
+                  <span
+                    className={styles.badgeDot}
+                    style={{
+                      backgroundColor: typeColor,
+                      boxShadow: `0 0 6px ${typeColor}80`
+                    }}
                   />
                   {device.type}
                 </span>
@@ -68,34 +171,68 @@ function App() {
       <main className={styles.canvasContainer}>
         {/* TOOLBAR */}
         <div className={styles.toolbar}>
-          <button className={styles.toolbarButton}>Clear</button>
+          <button className={styles.toolbarButton} onClick={handleClear}>
+            Clear
+          </button>
           <button className={styles.toolbarButton}>Validate</button>
-          <button className={`${styles.toolbarButton} ${styles.toolbarButtonPrimary}`}>
+          <button
+            className={`${styles.toolbarButton} ${styles.toolbarButtonPrimary}`}
+          >
             Generate Script
           </button>
         </div>
 
         {/* CANVAS SURFACE */}
-        <div className={styles.canvasSurface}>
-          <div className={styles.emptyState}>
-            <div className={styles.emptyStateIcon}>
-              <svg
-                width="24"
-                height="24"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <circle cx="12" cy="12" r="10" />
-                <path d="M12 8v8" />
-                <path d="M8 12h8" />
-              </svg>
+        <div
+          className={`${styles.canvasSurface} ${
+            isDraggingOver ? styles.canvasSurfaceDragging : ''
+          }`}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
+          {nodes.length === 0 ? (
+            <div className={styles.emptyState}>
+              <div className={styles.emptyStateIcon}>＋</div>
+              <div className={styles.emptyStateText}>
+                Drag an instrument here to start
+              </div>
             </div>
-            <div className={styles.emptyStateText}>Drag an instrument to start</div>
-          </div>
+          ) : (
+            nodes.map((node) => {
+              const borderLeftColor = getDeviceColor(node.type)
+              return (
+                <div
+                  key={node.id}
+                  className={nodeStyles.nodeCard}
+                  style={{
+                    transform: `translate(${node.x}px, ${node.y}px)`,
+                    borderLeft: `4px solid ${borderLeftColor}`
+                  }}
+                  draggable
+                  onDragStart={(e) => handleNodeDragStart(e, node.id)}
+                >
+                  <div className={nodeStyles.nodeHeader}>
+                    <span className={nodeStyles.nodeName}>{node.name}</span>
+                    <span className={nodeStyles.nodeType}>{node.type}</span>
+                    <button
+                      className={nodeStyles.deleteButton}
+                      onClick={() => handleDeleteNode(node.id)}
+                      title="Remove instrument"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <div className={nodeStyles.nodeBody}>
+                    <div className={nodeStyles.statusIndicator}>
+                      <span className={`${nodeStyles.statusDot} ${nodeStyles.statusDotActive}`} />
+                      <span>Simulated</span>
+                    </div>
+                  </div>
+                </div>
+              )
+            })
+          )}
         </div>
       </main>
 

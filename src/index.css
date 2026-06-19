@@ -1,18 +1,18 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 
 :root {
-  --bg-app: #06080c;         /* Pitch black slate tint */
-  --bg-canvas: #090b0f;      /* Deep black-blue */
-  --bg-sidebar: #0f121a;     /* Deep slate sidebar */
-  --bg-chat: #0e1118;        /* Deep slate chat */
-  --bg-card: #151922;        /* Dark slate card */
-  --bg-card-hover: #1e2431;  /* Hover state */
-  --color-primary: #0091ff;  /* Rohde & Schwarz Electric Blue */
+  --bg-app: #0a0a0a;         /* Deep neutral black */
+  --bg-canvas: #121212;      /* Neutral charcoal canvas background */
+  --bg-sidebar: #161616;     /* Neutral dark sidebar */
+  --bg-chat: #161616;        /* Neutral dark chat panel */
+  --bg-card: #1e1e1e;        /* Dark gray card */
+  --bg-card-hover: #262626;  /* Highlighted card background */
+  --color-primary: #0091ff;  /* R&S Electric Blue */
   --color-primary-hover: #33a7ff;
-  --color-text: #f8fafc;
-  --color-text-muted: #64748b;
-  --border-color: #1e2433;   /* Very subtle borders */
-  --dot-color: rgba(255, 255, 255, 0.025);
+  --color-text: #f5f5f5;     /* Soft white text */
+  --color-text-muted: #737373; /* Neutral gray muted text */
+  --border-color: #242424;   /* Flat dark gray border */
+  --dot-color: rgba(255, 255, 255, 0.045); /* Subtle canvas dot grid */
   
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, monospace;
