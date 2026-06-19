@@ -3,6 +3,8 @@ import styles from './components/Layout.module.css'
 import nodeStyles from './components/Node.module.css'
 import inspectorStyles from './components/Inspector.module.css'
 import { devices } from './data/devices'
+import { generateWorkflowSteps, type WorkflowStep } from './data/workflow'
+import { generateScriptAndChecklist, generateSCPITerminalLogs, type SCPILogLine } from './data/scriptGenerator'
 
 interface CanvasNode {
   id: string;
@@ -25,6 +27,8 @@ interface Message {
   sender: 'user' | 'assistant';
   text: string;
   timestamp: string;
+  type?: 'step' | 'summary';
+  stepType?: 'thinking' | 'add_device' | 'connect' | 'summary';
 }
 
 const getDeviceColor = (type: string) => {
@@ -62,6 +66,25 @@ function App() {
   const [isTyping, setIsTyping] = useState(false)
   const [nodes, setNodes] = useState<CanvasNode[]>([])
   const [connections, setConnections] = useState<Connection[]>([])
+  const [isStaging, setIsStaging] = useState(false)
+  const activeTimersRef = useRef<number[]>([])
+  
+  // Dragging states
+  const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null)
+  const dragOffsetRef = useRef({ x: 0, y: 0 })
+  const dragStartPosRef = useRef({ x: 0, y: 0 })
+
+  // Script and Terminal States
+  const [generatedScript, setGeneratedScript] = useState<string | null>(null)
+  const [generatedChecklist, setGeneratedChecklist] = useState<string[] | null>(null)
+  const [isScriptModalOpen, setIsScriptModalOpen] = useState(false)
+  const [isScriptStaging, setIsScriptStaging] = useState(false)
+  
+  const [terminalLogs, setTerminalLogs] = useState<SCPILogLine[]>([])
+  const [isTerminalOpen, setIsTerminalOpen] = useState(false)
+  const [isTerminalRunning, setIsTerminalRunning] = useState(false)
+  const terminalTimersRef = useRef<number[]>([])
+  const terminalEndRef = useRef<HTMLDivElement>(null)
   
   // Selection states
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
@@ -84,6 +107,18 @@ function App() {
     messageEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, isTyping])
 
+  // Interruption safety cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (activeTimersRef.current) {
+        activeTimersRef.current.forEach((t) => clearTimeout(t))
+      }
+      if (terminalTimersRef.current) {
+        terminalTimersRef.current.forEach((t) => clearTimeout(t))
+      }
+    }
+  }, [])
+
   // Auto-expand textarea height on input changes
   useEffect(() => {
     if (textareaRef.current) {
@@ -105,8 +140,115 @@ function App() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [selectedNodeId])
 
+  // Handle start dragging a node card with pointer events (touch & mouse)
+  const handleNodePointerDown = (e: React.PointerEvent, nodeId: string) => {
+    // Ignore drags if click originated from the delete button
+    if ((e.target as HTMLElement).classList.contains(nodeStyles.deleteButton)) {
+      return
+    }
+
+    e.preventDefault()
+    const canvas = canvasRef.current
+    const node = nodes.find((n) => n.id === nodeId)
+    
+    if (canvas && node) {
+      // Capture pointer so events keep firing even if drag leaves the card boundaries
+      e.currentTarget.setPointerCapture(e.pointerId)
+      setDraggingNodeId(nodeId)
+      
+      const rect = canvas.getBoundingClientRect()
+      const startX = e.clientX - rect.left
+      const startY = e.clientY - rect.top
+
+      dragOffsetRef.current = {
+        x: startX - node.x,
+        y: startY - node.y
+      }
+
+      dragStartPosRef.current = {
+        x: e.clientX,
+        y: e.clientY
+      }
+    }
+  }
+
+  // Hook to track pointer updates during a drag
+  useEffect(() => {
+    if (!draggingNodeId) return
+
+    const handlePointerMove = (e: PointerEvent) => {
+      const canvas = canvasRef.current
+      if (!canvas) return
+
+      const rect = canvas.getBoundingClientRect()
+      const currentX = e.clientX - rect.left
+      const currentY = e.clientY - rect.top
+
+      // Absolute correct positioning maths (relative to drag start position inside canvas)
+      let newX = currentX - dragOffsetRef.current.x
+      let newY = currentY - dragOffsetRef.current.y
+
+      // Clamp node coordinates inside canvas bounds (190px width, 128px height)
+      const maxLimitX = rect.width - 190
+      const maxLimitY = rect.height - 128
+
+      newX = Math.max(10, Math.min(newX, maxLimitX - 10))
+      newY = Math.max(10, Math.min(newY, maxLimitY - 10))
+
+      setNodes((prev) =>
+        prev.map((node) =>
+          node.id === draggingNodeId
+            ? { ...node, x: newX, y: newY }
+            : node
+        )
+      )
+    }
+
+    const handlePointerUp = (e: PointerEvent) => {
+      // Release pointer capture if any element captured it
+      try {
+        const target = e.target as HTMLElement
+        if (target && typeof target.releasePointerCapture === 'function') {
+          target.releasePointerCapture(e.pointerId)
+        }
+      } catch (err) {
+        // ignore safety failures on release pointer capture
+      }
+
+      // Check if it is a pure click (has not moved more than 3px) or a drag
+      const deltaX = Math.abs(e.clientX - dragStartPosRef.current.x)
+      const deltaY = Math.abs(e.clientY - dragStartPosRef.current.y)
+      const hasMoved = deltaX > 3 || deltaY > 3
+
+      if (!hasMoved) {
+        // Pure click/tap: Select the node to open inspector properties
+        setSelectedNodeId(draggingNodeId)
+      }
+
+      setDraggingNodeId(null)
+    }
+
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', handlePointerUp)
+
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerUp)
+    }
+  }, [draggingNodeId])
+
   // Clear canvas
   const handleClear = () => {
+    setIsStaging(false)
+    setIsTyping(false)
+    if (activeTimersRef.current && activeTimersRef.current.length > 0) {
+      activeTimersRef.current.forEach((t) => clearTimeout(t))
+      activeTimersRef.current = []
+    }
+    if (terminalTimersRef.current && terminalTimersRef.current.length > 0) {
+      terminalTimersRef.current.forEach((t) => clearTimeout(t))
+      terminalTimersRef.current = []
+    }
     setNodes([])
     setConnections([])
     setSelectedNodeId(null)
@@ -114,8 +256,56 @@ function App() {
 
   // Reset chat and clear canvas
   const handleNewChat = () => {
+    setIsStaging(false)
+    setIsTyping(false)
+    if (activeTimersRef.current && activeTimersRef.current.length > 0) {
+      activeTimersRef.current.forEach((t) => clearTimeout(t))
+      activeTimersRef.current = []
+    }
+    if (terminalTimersRef.current && terminalTimersRef.current.length > 0) {
+      terminalTimersRef.current.forEach((t) => clearTimeout(t))
+      terminalTimersRef.current = []
+    }
     setMessages([])
-    handleClear()
+    setNodes([])
+    setConnections([])
+    setSelectedNodeId(null)
+  }
+
+  // Scroll to bottom of terminal when logs change
+  useEffect(() => {
+    terminalEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [terminalLogs])
+
+  const handleRunWorkflow = () => {
+    // 1. Clear any active terminal timers
+    if (terminalTimersRef.current.length > 0) {
+      terminalTimersRef.current.forEach((t) => clearTimeout(t))
+      terminalTimersRef.current = []
+    }
+
+    setIsTerminalOpen(true)
+    setIsTerminalRunning(true)
+    setTerminalLogs([])
+
+    const logsToPrint = generateSCPITerminalLogs(nodes)
+    
+    logsToPrint.forEach((log, idx) => {
+      // 250ms interval between lines
+      const timerId = window.setTimeout(() => {
+        // Remove current timerId from tracking list
+        terminalTimersRef.current = terminalTimersRef.current.filter((t) => t !== timerId)
+
+        setTerminalLogs((prev) => [...prev, log])
+
+        // Check if this was the last line
+        if (idx === logsToPrint.length - 1) {
+          setIsTerminalRunning(false)
+        }
+      }, idx * 250)
+
+      terminalTimersRef.current.push(timerId)
+    })
   }
 
   // Delete Node & Associated Connections
@@ -285,240 +475,201 @@ function App() {
     }
   }
 
-  // Dynamic Python SCPI Code Generator
+  // Dynamic Python SCPI Code Generator with Staged Reveal Narration
   const handleGenerateScript = () => {
-    if (nodes.length === 0) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `script_${Date.now()}`,
-          sender: 'assistant',
-          text: "⚠️ **Script Generation Failed:**\n\nCanvas is empty. Describe a calibration flow to start.",
-          timestamp: getFormattedTime()
-        }
-      ])
-      return
+    if (nodes.length === 0) return
+
+    // 1. Interruption safety: clear any previous active timers
+    if (activeTimersRef.current.length > 0) {
+      activeTimersRef.current.forEach((t) => clearTimeout(t))
+      activeTimersRef.current = []
     }
 
-    let code = `import socket
-import time
+    setIsScriptStaging(true)
+    setIsTyping(false)
 
-def setup_workbench():
-    print("Initializing instrument calibration connections...")
-`
+    const { narrationSteps, script, checklist } = generateScriptAndChecklist(nodes)
+    
+    let cumulativeDelay = 0
 
-    nodes.forEach((node) => {
-      if (node.deviceId === 'nge100') {
-        const v = parseFloat(node.properties.voltage ?? 12.0).toFixed(2)
-        const c = parseFloat(node.properties.current ?? 1.5).toFixed(2)
-        const active = node.properties.output ? 'ON' : 'OFF'
-        code += `
-    # Configure NGE100 Power Supply
-    nge = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    nge.connect(("192.168.8.101", 5025))
-    nge.sendall(b"*RST\\n")
-    nge.sendall(b"INST OUT1\\n")
-    nge.sendall(b"VOLT ${v}\\n")
-    nge.sendall(b"CURR ${c}\\n")
-    nge.sendall(b"OUTP ${active}\\n")
-    print("NGE100 configured: Voltage = ${v} V, Current = ${c} A, Output = ${active}")
-    nge.close()
-`
-      } else if (node.deviceId === 'fpc1500') {
-        const cf = (parseFloat(node.properties.centerFreq ?? 500.0) * 1e6).toFixed(0) // MHz to Hz
-        const span = (parseFloat(node.properties.span ?? 10.0) * 1e6).toFixed(0) // MHz to Hz
-        const ref = parseFloat(node.properties.refLevel ?? -10.0)
-        code += `
-    # Configure FPC1500 Spectrum Analyzer
-    fpc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    fpc.connect(("192.168.8.102", 5025))
-    fpc.sendall(b"*RST\\n")
-    fpc.sendall(b"FREQ:CENT ${cf}\\n")
-    fpc.sendall(b"FREQ:SPAN ${span}\\n")
-    fpc.sendall(b"DISP:TRAC:Y:RLEV ${ref}\\n")
-    print("FPC1500 configured: Center Freq = ${node.properties.centerFreq} MHz, Span = ${node.properties.span} MHz, Ref Level = ${ref} dBm")
-    fpc.close()
-`
-      } else if (node.deviceId === 'rtb24') {
-        const scale = parseFloat(node.properties.ch1Scale ?? 1.0).toFixed(3)
-        const tb = (parseFloat(node.properties.timebase ?? 1.0) * 1e-3).toExponential(3) // ms to s
-        const trig = node.properties.trigger ?? 'CH1'
-        code += `
-    # Configure RTB24 Oscilloscope
-    rtb = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    rtb.connect(("192.168.8.103", 5025))
-    rtb.sendall(b"*RST\\n")
-    rtb.sendall(b"TIM:SCAL ${tb}\\n")
-    rtb.sendall(b"CHAN1:STAT ON\\n")
-    rtb.sendall(b"CHAN1:SCAL ${scale}\\n")
-    rtb.sendall(b"TRIG:A:SOUR ${trig}\\n")
-    print("RTB24 configured: Timebase = ${node.properties.timebase} ms/div, CH1 Scale = ${scale} V/div, Trigger = ${trig}")
-    rtb.close()
-`
-      } else if (node.deviceId === 'hmf2550') {
-        const freq = (parseFloat(node.properties.frequency ?? 10.0) * 1000).toFixed(0) // kHz to Hz
-        const amp = parseFloat(node.properties.amplitude ?? 2.0).toFixed(2)
-        code += `
-    # Configure HMF2550 Function Generator
-    hmf = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    hmf.connect(("192.168.8.104", 5025))
-    hmf.sendall(b"*RST\\n")
-    hmf.sendall(b"FREQ ${freq}\\n")
-    hmf.sendall(b"VOLT ${amp}\\n")
-    hmf.sendall(b"OUTP ON\\n")
-    print("HMF2550 configured: Freq = ${node.properties.frequency} kHz, Amp = ${amp} Vpp")
-    hmf.close()
-`
-      }
+    narrationSteps.forEach((step, idx) => {
+      // 600ms staged reveals
+      cumulativeDelay += 600
+
+      const timerId = window.setTimeout(() => {
+        // Remove current timerId from tracking list
+        activeTimersRef.current = activeTimersRef.current.filter((t) => t !== timerId)
+
+        // Add timeline step log line
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `script_step_${Date.now()}_${idx}`,
+            sender: 'assistant',
+            text: step.label,
+            timestamp: getFormattedTime(),
+            type: 'step',
+            stepType: 'add_device' // Map to 'add_device' (plus/action icon)
+          }
+        ])
+
+        // Check if this was the last step
+        if (idx === narrationSteps.length - 1) {
+          setIsScriptStaging(false)
+          setGeneratedScript(script)
+          setGeneratedChecklist(checklist)
+          setIsScriptModalOpen(true)
+
+          // Post final summary chat message
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `script_ready_${Date.now()}`,
+              sender: 'assistant',
+              text: "Script ready — see the panel for your SCPI workflow and checklist.",
+              timestamp: getFormattedTime(),
+              type: 'summary'
+            }
+          ])
+        }
+      }, cumulativeDelay)
+
+      activeTimersRef.current.push(timerId)
     })
+  }
 
-    code += `
-    print("All calibration protocols deployed successfully.")
+  // Run simulated staged workflow execution
+  const runStagedWorkflow = (steps: WorkflowStep[]) => {
+    // 1. Interruption safety: clear any previous active timers
+    if (activeTimersRef.current.length > 0) {
+      activeTimersRef.current.forEach((t) => clearTimeout(t))
+      activeTimersRef.current = []
+    }
 
-if __name__ == "__main__":
-    setup_workbench()
-`
+    setIsStaging(true)
+    setIsTyping(false)
+    
+    // Dictionary to map temporary sequence IDs to actual unique runtime IDs
+    const idMapping: Record<string, string> = {}
+    let cumulativeDelay = 0
 
-    let checklist = "### 📋 Hardware Setup Checklist\n\n"
-    nodes.forEach((node, idx) => {
-      checklist += `${idx + 1}. **${node.name}** (${node.type}):\n`
-      if (node.deviceId === 'nge100') {
-        checklist += `   - Connect DC supply cables to target inputs.\n   - Ensure supply limit is set to **${node.properties.voltage} V / ${node.properties.current} A**.\n`
-      } else if (node.deviceId === 'fpc1500') {
-        checklist += `   - Connect RF input to signal source/amplifier output.\n   - Set span to **${node.properties.span} MHz**.\n`
-      } else if (node.deviceId === 'rtb24') {
-        checklist += `   - Connect Probe 1 to channel 1 input.\n   - Trigger set to **${node.properties.trigger}**.\n`
-      } else if (node.deviceId === 'hmf2550') {
-        checklist += `   - Connect signal output to channel 1 scope input.\n   - Frequency set to **${node.properties.frequency} kHz**.\n`
+    steps.forEach((step, idx) => {
+      let stepDelay = 600
+      if (step.type === 'thinking') {
+        stepDelay = 800
       }
+      
+      cumulativeDelay += stepDelay
+
+      const timerId = window.setTimeout(() => {
+        // Remove current timerId from tracking list
+        activeTimersRef.current = activeTimersRef.current.filter((t) => t !== timerId)
+
+        if (step.type === 'thinking') {
+          setIsTyping(true)
+        } else if (step.type === 'add_device') {
+          setIsTyping(false)
+          
+          const tempId = step.payload?.fromId || `temp_${Date.now()}`
+          const resolvedId = `${step.payload?.deviceId}_${Date.now()}`
+          idMapping[tempId] = resolvedId
+
+          const newNode: CanvasNode = {
+            id: resolvedId,
+            deviceId: step.payload?.deviceId || '',
+            name: step.payload?.nodeName || '',
+            type: step.payload?.nodeType || '',
+            x: step.payload?.x || 50,
+            y: step.payload?.y || 100,
+            properties: step.payload?.properties || {}
+          }
+
+          setNodes((prev) => [...prev, newNode])
+
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `step_${Date.now()}_${idx}`,
+              sender: 'assistant',
+              text: step.label || '',
+              timestamp: getFormattedTime(),
+              type: 'step',
+              stepType: 'add_device'
+            }
+          ])
+        } else if (step.type === 'connect') {
+          setIsTyping(false)
+          
+          const resolvedFrom = idMapping[step.payload?.fromId || '']
+          const resolvedTo = idMapping[step.payload?.toId || '']
+
+          if (resolvedFrom && resolvedTo) {
+            const newConn: Connection = {
+              id: `${resolvedFrom}-${resolvedTo}`,
+              fromId: resolvedFrom,
+              toId: resolvedTo
+            }
+            setConnections((prev) => [...prev, newConn])
+          }
+
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `step_${Date.now()}_${idx}`,
+              sender: 'assistant',
+              text: step.label || '',
+              timestamp: getFormattedTime(),
+              type: 'step',
+              stepType: 'connect'
+            }
+          ])
+        } else if (step.type === 'summary') {
+          setIsTyping(false)
+          setIsStaging(false)
+
+          const summaryText = step.payload?.summaryText || ''
+          if (summaryText === 'CLEAR_CANVAS') {
+            handleClear()
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: `reply_${Date.now()}`,
+                sender: 'assistant',
+                text: "Workflow canvas cleared successfully. Let me know what you want to measure next!",
+                timestamp: getFormattedTime(),
+                type: 'summary'
+              }
+            ])
+          } else {
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: `reply_${Date.now()}`,
+                sender: 'assistant',
+                text: summaryText,
+                timestamp: getFormattedTime(),
+                type: 'summary'
+              }
+            ])
+          }
+        }
+      }, cumulativeDelay)
+
+      activeTimersRef.current.push(timerId)
     })
-
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: `script_${Date.now()}`,
-        sender: 'assistant',
-        text: `💻 **Generated Python SCPI Script:**\n\n\`\`\`python\n${code}\n\`\`\`\n\n${checklist}`,
-        timestamp: getFormattedTime()
-      }
-    ])
   }
 
   // Mock AI Intent processing
   const processIntent = (intentText: string) => {
-    const cleanedText = intentText.toLowerCase()
-    setIsTyping(true)
+    const steps = generateWorkflowSteps(intentText)
     
-    setTimeout(() => {
-      setIsTyping(false)
-      
-      if (cleanedText.includes('snr') || cleanedText.includes('amplifier') || cleanedText.includes('spectrum')) {
-        const ngeId = `nge100_${Date.now()}`
-        const fpcId = `fpc1500_${Date.now()}`
-        
-        const newNGE: CanvasNode = {
-          id: ngeId,
-          deviceId: 'nge100',
-          name: 'NGE100',
-          type: 'Power Supply',
-          x: 60,
-          y: 110,
-          properties: { voltage: 12.0, current: 1.5, output: true }
-        }
-        
-        const newFPC: CanvasNode = {
-          id: fpcId,
-          deviceId: 'fpc1500',
-          name: 'FPC1500',
-          type: 'Spectrum Analyzer',
-          x: 320,
-          y: 110,
-          properties: { centerFreq: 500.0, span: 10.0, refLevel: -10 }
-        }
-        
-        setNodes([newNGE, newFPC])
-        setConnections([
-          {
-            id: `${ngeId}-${fpcId}`,
-            fromId: ngeId,
-            toId: fpcId
-          }
-        ])
-        
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `reply_${Date.now()}`,
-            sender: 'assistant',
-            text: "I've analyzed your request and placed the NGE100 Power Supply (connected to power the amplifier at 12V) and the FPC1500 Spectrum Analyzer (configured to a span of 10 MHz centered at 500 MHz) on the canvas. Click on the cards to inspect or edit parameters.",
-            timestamp: getFormattedTime()
-          }
-        ])
-      } else if (cleanedText.includes('sine') || cleanedText.includes('wave') || cleanedText.includes('oscilloscope') || cleanedText.includes('waveform')) {
-        const hmfId = `hmf2550_${Date.now()}`
-        const rtbId = `rtb24_${Date.now()}`
-        
-        const newHMF: CanvasNode = {
-          id: hmfId,
-          deviceId: 'hmf2550',
-          name: 'HMF2550',
-          type: 'Function Generator',
-          x: 60,
-          y: 110,
-          properties: { frequency: 10.0, amplitude: 2.0 }
-        }
-        
-        const newRTB: CanvasNode = {
-          id: rtbId,
-          deviceId: 'rtb24',
-          name: 'RTB24',
-          type: 'Oscilloscope',
-          x: 320,
-          y: 110,
-          properties: { timebase: 1.0, ch1Scale: 1.0, trigger: 'CH1' }
-        }
-        
-        setNodes([newHMF, newRTB])
-        setConnections([
-          {
-            id: `${hmfId}-${rtbId}`,
-            fromId: hmfId,
-            toId: rtbId
-          }
-        ])
-        
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `reply_${Date.now()}`,
-            sender: 'assistant',
-            text: "I've set up the function generator to supply a 10 kHz sine wave and linked it to Channel 1 of the RTB24 Oscilloscope. Visual parameters are loaded on the screen. Select a card to edit.",
-            timestamp: getFormattedTime()
-          }
-        ])
-      } else if (cleanedText.includes('clear') || cleanedText.includes('reset')) {
-        handleClear()
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `reply_${Date.now()}`,
-            sender: 'assistant',
-            text: "Workflow canvas cleared successfully. Let me know what you want to measure next!",
-            timestamp: getFormattedTime()
-          }
-        ])
-      } else {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `reply_${Date.now()}`,
-            sender: 'assistant',
-            text: "I couldn't identify a hardware plan for that request. Try sending one of the suggestions below to populate the workbench canvas!",
-            timestamp: getFormattedTime()
-          }
-        ])
-      }
-    }, 850)
+    // Clear canvas before placing new device layouts to prevent overlapping coordinates
+    const hasAdditions = steps.some((s) => s.type === 'add_device')
+    if (hasAdditions) {
+      handleClear()
+    }
+
+    runStagedWorkflow(steps)
   }
 
   const handleSend = (e: React.FormEvent) => {
@@ -971,15 +1122,33 @@ if __name__ == "__main__":
       <main className={styles.canvasContainer}>
         {/* TOOLBAR */}
         <div className={styles.toolbar}>
-          <button className={styles.toolbarButton} onClick={handleClear}>
+          {generatedScript && (
+            <button 
+              className={styles.toolbarButton} 
+              onClick={() => setIsScriptModalOpen(true)}
+              disabled={isStaging || isScriptStaging}
+            >
+              View Last Script
+            </button>
+          )}
+          <button 
+            className={styles.toolbarButton} 
+            onClick={handleClear}
+            disabled={isStaging || isScriptStaging}
+          >
             Clear
           </button>
-          <button className={styles.toolbarButton} onClick={handleValidate}>
+          <button 
+            className={styles.toolbarButton} 
+            onClick={handleValidate}
+            disabled={isStaging || isScriptStaging}
+          >
             Validate
           </button>
           <button
             className={`${styles.toolbarButton} ${styles.toolbarButtonPrimary}`}
             onClick={handleGenerateScript}
+            disabled={nodes.length === 0 || isStaging || isScriptStaging}
           >
             Generate Script
           </button>
@@ -988,7 +1157,7 @@ if __name__ == "__main__":
         {/* CANVAS SURFACE */}
         <div
           ref={canvasRef}
-          className={styles.canvasSurface}
+          className={`${styles.canvasSurface} ${draggingNodeId ? styles.canvasSurfaceDragging : ''}`}
           onClick={handleCanvasClick}
         >
           {isLeftCollapsed && (
@@ -1066,16 +1235,21 @@ if __name__ == "__main__":
               const hasOutputConnection = connections.some((c) => c.fromId === node.id)
               const isSelected = selectedNodeId === node.id
               
+              const isDragging = draggingNodeId === node.id
+              
               return (
                 <div
                   key={node.id}
-                  className={`${nodeStyles.nodeCard} ${isSelected ? nodeStyles.nodeCardSelected : ''}`}
+                  className={`${nodeStyles.nodeCard} ${isSelected ? nodeStyles.nodeCardSelected : ''} ${
+                    isDragging ? nodeStyles.nodeCardDragging : ''
+                  }`}
                   style={{
                     transform: `translate(${node.x}px, ${node.y}px)`
                   }}
+                  onPointerDown={(e) => handleNodePointerDown(e, node.id)}
                   onClick={(e) => {
                     e.stopPropagation()
-                    setSelectedNodeId(node.id)
+                    // Selection is handled in handlePointerUp to prevent opening properties during drags
                   }}
                 >
                   {/* Visual Left Connection Port */}
@@ -1236,23 +1410,50 @@ if __name__ == "__main__":
               </div>
               
               <div className={styles.messageList}>
-                {messages.map((msg) => (
-                  <div
-                    key={msg.id}
-                    className={`${styles.messageItem} ${
-                      msg.sender === 'user' ? styles.messageUser : styles.messageAssistant
-                    }`}
-                  >
+                {messages.map((msg) => {
+                  if (msg.type === 'step') {
+                    return (
+                      <div key={msg.id} className={styles.stepLogItem}>
+                        <div className={styles.stepLogIcon}>
+                          {msg.stepType === 'add_device' ? (
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                              <line x1="12" y1="5" x2="12" y2="19"></line>
+                              <line x1="5" y1="12" x2="19" y2="12"></line>
+                            </svg>
+                          ) : (
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+                              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+                            </svg>
+                          )}
+                        </div>
+                        <div className={styles.stepLogText}>{msg.text}</div>
+                      </div>
+                    )
+                  }
+
+                  return (
                     <div
-                      className={`${styles.messageBubble} ${
-                        msg.sender === 'user' ? styles.bubbleUser : styles.bubbleAssistant
+                      key={msg.id}
+                      className={`${styles.messageItem} ${
+                        msg.sender === 'user' ? styles.messageUser : styles.messageAssistant
                       }`}
                     >
-                      {renderMessageText(msg.text)}
+                      <div
+                        className={`${styles.messageBubble} ${
+                          msg.sender === 'user'
+                            ? styles.bubbleUser
+                            : msg.type === 'summary'
+                            ? styles.bubbleSummary
+                            : styles.bubbleAssistant
+                        }`}
+                      >
+                        {renderMessageText(msg.text)}
+                      </div>
+                      <span className={styles.messageTimestamp}>{msg.timestamp}</span>
                     </div>
-                    <span className={styles.messageTimestamp}>{msg.timestamp}</span>
-                  </div>
-                ))}
+                  )
+                })}
                 
                 {/* Typing indicator */}
                 {isTyping && (
@@ -1293,26 +1494,28 @@ if __name__ == "__main__":
                 <div ref={messageEndRef} />
               </div>
               
-              <form onSubmit={handleSend} className={styles.unifiedInputWrapper}>
+              <form onSubmit={handleSend} className={styles.unifiedInputWrapper} style={{ opacity: (isStaging || isScriptStaging) ? 0.6 : 1 }}>
                 <textarea
                   ref={textareaRef}
                   className={styles.unifiedTextInput}
-                  placeholder="Describe a measurement flow..."
+                  placeholder={(isStaging || isScriptStaging) ? "Please wait..." : "Describe a measurement flow..."}
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault();
-                      handleSend(e);
+                      if (!(isStaging || isScriptStaging)) handleSend(e);
                     }
                   }}
                   rows={1}
+                  disabled={isStaging || isScriptStaging}
                 />
                 <div className={styles.inputActionContainer}>
                   <button
                     type="button"
                     className={`${styles.integratedMicBtn} ${isListening ? styles.integratedMicBtnActive : ''}`}
                     onClick={toggleSpeech}
+                    disabled={isStaging || isScriptStaging}
                     title={isListening ? 'Stop listening' : 'Start voice mode'}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1325,7 +1528,7 @@ if __name__ == "__main__":
                     type={isTyping ? "button" : "submit"}
                     className={styles.integratedSendBtn}
                     onClick={isTyping ? () => setIsTyping(false) : undefined}
-                    disabled={!isTyping && !chatInput.trim()}
+                    disabled={isStaging || isScriptStaging || (!isTyping && !chatInput.trim())}
                     title={isTyping ? "Stop generating" : "Send message"}
                   >
                     {isTyping ? (
@@ -1345,6 +1548,126 @@ if __name__ == "__main__":
           )}
         </div>
       </section>
+
+      {/* SCRIPT & WORKFLOW EXECUTION MODAL */}
+      {isScriptModalOpen && (
+        <div className={styles.modalOverlay} onClick={() => {
+          if (!isTerminalRunning) setIsScriptModalOpen(false)
+        }}>
+          <div className={styles.modalContainer} onClick={(e) => e.stopPropagation()}>
+            <div className={styles.modalHeader}>
+              <div className={styles.modalHeaderTitle}>
+                <span className={styles.modalHeaderIcon}>💻</span>
+                <div>
+                  <h2>SCPI Workflow & Automation</h2>
+                  <p>Compile calibration parameters and run hardware loop validation</p>
+                </div>
+              </div>
+              <button 
+                className={styles.modalCloseBtn} 
+                onClick={() => setIsScriptModalOpen(false)}
+                disabled={isTerminalRunning}
+              >
+                ✕
+              </button>
+            </div>
+            
+            <div className={styles.modalBody}>
+              {/* Left Column: Generated Python Script */}
+              <div className={styles.modalColumnLeft}>
+                <div className={styles.columnHeader}>
+                  <span>GENERATED PYTHON SCPI SCRIPT (PyVISA)</span>
+                  <button 
+                    className={styles.modalCopyBtn}
+                    onClick={() => {
+                      if (generatedScript) {
+                        navigator.clipboard.writeText(generatedScript)
+                        alert("Python Visa Script copied to clipboard!")
+                      }
+                    }}
+                  >
+                    Copy Script
+                  </button>
+                </div>
+                <pre className={styles.scriptPre}>
+                  <code>{generatedScript}</code>
+                </pre>
+              </div>
+              
+              {/* Right Column: Checklist & Run Terminal */}
+              <div className={styles.modalColumnRight}>
+                {/* Checklist Section */}
+                <div className={styles.checklistSection}>
+                  <div className={styles.columnHeader}>
+                    <span>📋 PRE-FLIGHT HARDWARE CHECKLIST</span>
+                    <button 
+                      className={styles.modalCopyBtn}
+                      onClick={() => {
+                        if (generatedChecklist) {
+                          navigator.clipboard.writeText(generatedChecklist.join('\n'))
+                          alert("Laboratory checklist copied to clipboard!")
+                        }
+                      }}
+                    >
+                      Copy Checklist
+                    </button>
+                  </div>
+                  <ul className={styles.checklistList}>
+                    {generatedChecklist?.map((item, idx) => (
+                      <li key={idx}>
+                        <span className={styles.checkNumber}>{idx + 1}</span>
+                        <span className={styles.checkText}>{item}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                
+                {/* Terminal Execution Section */}
+                <div className={styles.terminalSection}>
+                  <div className={styles.terminalHeader}>
+                    <span>💻 MOCK SCPI EXECUTION BUS</span>
+                    <button
+                      className={styles.terminalRunBtn}
+                      onClick={handleRunWorkflow}
+                      disabled={isTerminalRunning}
+                    >
+                      {isTerminalRunning ? "Running..." : "Run Workflow"}
+                    </button>
+                  </div>
+                  
+                  {isTerminalOpen && (
+                    <div className={styles.terminalConsole}>
+                      {terminalLogs.map((log, idx) => {
+                        let color = '#888'
+                        if (log.type === 'cmd') color = '#22d3ee' // cyan for commands
+                        if (log.type === 'warning') color = '#fbbf24' // amber for warnings
+                        if (log.type === 'success') color = '#34d399' // green for success
+                        
+                        return (
+                          <div 
+                            key={idx} 
+                            style={{ 
+                              color, 
+                              fontFamily: 'var(--font-mono)', 
+                              fontSize: '11px', 
+                              lineHeight: '1.5',
+                              padding: '2px 0',
+                              fontWeight: log.type === 'success' ? 700 : 'normal'
+                            }}
+                          >
+                            {log.text}
+                          </div>
+                        )
+                      })}
+                      <div ref={terminalEndRef} />
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
