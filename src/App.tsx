@@ -1,6 +1,7 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import styles from './components/Layout.module.css'
 import nodeStyles from './components/Node.module.css'
+import inspectorStyles from './components/Inspector.module.css'
 import { devices } from './data/devices'
 
 interface CanvasNode {
@@ -10,6 +11,7 @@ interface CanvasNode {
   type: string;
   x: number;
   y: number;
+  properties: Record<string, any>;
 }
 
 interface Connection {
@@ -18,12 +20,10 @@ interface Connection {
   toId: string;
 }
 
-interface ActiveWire {
-  fromId: string;
-  startX: number;
-  startY: number;
-  currentX: number;
-  currentY: number;
+interface Message {
+  id: string;
+  sender: 'user' | 'assistant';
+  text: string;
 }
 
 const getDeviceColor = (type: string) => {
@@ -47,181 +47,234 @@ const getDeviceColor = (type: string) => {
 
 function App() {
   const [chatInput, setChatInput] = useState('')
+  const [messages, setMessages] = useState<Message[]>([
+    {
+      id: 'welcome',
+      sender: 'assistant',
+      text: "Hi! Describe a measurement and I'll build the workflow for you."
+    }
+  ])
+  const [isTyping, setIsTyping] = useState(false)
   const [nodes, setNodes] = useState<CanvasNode[]>([])
   const [connections, setConnections] = useState<Connection[]>([])
   
-  // Dragging states
-  const [isDraggingOver, setIsDraggingOver] = useState(false)
-  const [draggingNode, setDraggingNode] = useState<{ id: string; offsetX: number; offsetY: number } | null>(null)
+  // Selection states
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
   
-  // Connection line state
-  const [activeWire, setActiveWire] = useState<ActiveWire | null>(null)
-  
+  const messageEndRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLDivElement>(null)
+
+  // Scroll to bottom of chat
+  useEffect(() => {
+    messageEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages, isTyping])
+
+  // Global key listener to delete selected node
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedNodeId) {
+        // Only trigger if we are not typing inside an input element
+        if (document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
+          handleDeleteNode(selectedNodeId)
+        }
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [selectedNodeId])
 
   // Clear canvas
   const handleClear = () => {
     setNodes([])
     setConnections([])
-    setActiveWire(null)
-  }
-
-  // Handle Drag from Sidebar
-  const handleSidebarDragStart = (e: React.DragEvent, deviceId: string) => {
-    e.dataTransfer.setData('source', 'sidebar')
-    e.dataTransfer.setData('device_id', deviceId)
-  }
-
-  // Handle Drag Start for Node (repositioning)
-  const handleNodeDragStart = (e: React.DragEvent, node: CanvasNode) => {
-    e.dataTransfer.setData('source', 'canvas')
-    e.dataTransfer.setData('node_id', node.id)
-    
-    const rect = e.currentTarget.getBoundingClientRect()
-    const offsetX = e.clientX - rect.left
-    const offsetY = e.clientY - rect.top
-    
-    // Store local React state for real-time drag updates
-    setDraggingNode({ id: node.id, offsetX, offsetY })
-    
-    // Set minimal ghost drag image to avoid double graphics
-    const img = new Image()
-    img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
-    e.dataTransfer.setDragImage(img, 0, 0)
-  }
-
-  // Handle Drag Over Canvas
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault()
-    setIsDraggingOver(true)
-
-    // Real-time position tracking during drag
-    if (draggingNode && canvasRef.current) {
-      const rect = canvasRef.current.getBoundingClientRect()
-      const mouseX = e.clientX - rect.left
-      const mouseY = e.clientY - rect.top
-      
-      const targetX = Math.max(10, mouseX - draggingNode.offsetX)
-      const targetY = Math.max(10, mouseY - draggingNode.offsetY)
-      
-      setNodes((prev) =>
-        prev.map((n) => (n.id === draggingNode.id ? { ...n, x: targetX, y: targetY } : n))
-      )
-    }
-  }
-
-  const handleDragLeave = () => {
-    setIsDraggingOver(false)
-  }
-
-  // Handle Drop on Canvas
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault()
-    setIsDraggingOver(false)
-    setDraggingNode(null)
-
-    const source = e.dataTransfer.getData('source')
-    if (source === 'sidebar' && canvasRef.current) {
-      const deviceId = e.dataTransfer.getData('device_id')
-      const device = devices.find((d) => d.id === deviceId)
-      const rect = canvasRef.current.getBoundingClientRect()
-      const dropX = e.clientX - rect.left
-      const dropY = e.clientY - rect.top
-
-      if (device) {
-        const newNode: CanvasNode = {
-          id: `${deviceId}_${Date.now()}`,
-          deviceId: device.id,
-          name: device.name,
-          type: device.type,
-          x: Math.max(10, dropX - 95), // Centering card (190px width)
-          y: Math.max(10, dropY - 62)  // Centering card (~125px height)
-        }
-        setNodes((prev) => [...prev, newNode])
-      }
-    }
-  }
-
-  const handleDragEnd = () => {
-    setDraggingNode(null)
+    setSelectedNodeId(null)
   }
 
   // Delete Node & Associated Connections
   const handleDeleteNode = (nodeId: string) => {
     setNodes((prev) => prev.filter((n) => n.id !== nodeId))
     setConnections((prev) => prev.filter((c) => c.fromId !== nodeId && c.toId !== nodeId))
-  }
-
-  // CONNECTION PORT EVENT HANDLERS
-  const handlePortMouseDown = (e: React.MouseEvent, nodeId: string) => {
-    e.stopPropagation()
-    e.preventDefault()
-    
-    const node = nodes.find((n) => n.id === nodeId)
-    if (node) {
-      setActiveWire({
-        fromId: nodeId,
-        startX: node.x + 190, // Right port position
-        startY: node.y + 62,  // Middle height of card
-        currentX: node.x + 190,
-        currentY: node.y + 62
-      })
+    if (selectedNodeId === nodeId) {
+      setSelectedNodeId(null)
     }
   }
 
-  const handleCanvasMouseMove = (e: React.MouseEvent) => {
-    if (activeWire && canvasRef.current) {
-      const rect = canvasRef.current.getBoundingClientRect()
-      const mouseX = e.clientX - rect.left
-      const mouseY = e.clientY - rect.top
-      
-      setActiveWire((prev) =>
-        prev
+  // Edit node properties
+  const handlePropertyChange = (nodeId: string, key: string, value: any) => {
+    setNodes((prev) =>
+      prev.map((n) =>
+        n.id === nodeId
           ? {
-              ...prev,
-              currentX: mouseX,
-              currentY: mouseY
+              ...n,
+              properties: {
+                ...n.properties,
+                [key]: value
+              }
             }
-          : null
+          : n
       )
-    }
+    )
   }
 
-  const handleCanvasMouseUp = () => {
-    setActiveWire(null)
-  }
-
-  const handlePortMouseUp = (e: React.MouseEvent, toId: string) => {
-    e.stopPropagation()
-    if (activeWire && activeWire.fromId !== toId) {
-      // Check if connection already exists
-      const exists = connections.some(
-        (c) => c.fromId === activeWire.fromId && c.toId === toId
-      )
-      if (!exists) {
-        setConnections((prev) => [
+  // Mock AI Intent processing
+  const processIntent = (intentText: string) => {
+    const cleanedText = intentText.toLowerCase()
+    
+    setIsTyping(true)
+    
+    setTimeout(() => {
+      setIsTyping(false)
+      
+      if (cleanedText.includes('snr') || cleanedText.includes('amplifier') || cleanedText.includes('spectrum')) {
+        const ngeId = `nge100_${Date.now()}`
+        const fpcId = `fpc1500_${Date.now()}`
+        
+        const newNGE: CanvasNode = {
+          id: ngeId,
+          deviceId: 'nge100',
+          name: 'NGE100',
+          type: 'Power Supply',
+          x: 60,
+          y: 110,
+          properties: { voltage: 12.0, current: 1.5, output: true }
+        }
+        
+        const newFPC: CanvasNode = {
+          id: fpcId,
+          deviceId: 'fpc1500',
+          name: 'FPC1500',
+          type: 'Spectrum Analyzer',
+          x: 320,
+          y: 110,
+          properties: { centerFreq: 500.0, span: 10.0, refLevel: -10 }
+        }
+        
+        setNodes([newNGE, newFPC])
+        setConnections([
+          {
+            id: `${ngeId}-${fpcId}`,
+            fromId: ngeId,
+            toId: fpcId
+          }
+        ])
+        
+        setMessages((prev) => [
           ...prev,
           {
-            id: `${activeWire.fromId}-${toId}`,
-            fromId: activeWire.fromId,
-            toId
+            id: `reply_${Date.now()}`,
+            sender: 'assistant',
+            text: "I've analyzed your request and placed the NGE100 Power Supply (connected to power the amplifier at 12V) and the FPC1500 Spectrum Analyzer (configured to a span of 10 MHz centered at 500 MHz) on the canvas. Click on the cards to inspect or edit parameters."
+          }
+        ])
+      } else if (cleanedText.includes('sine') || cleanedText.includes('wave') || cleanedText.includes('oscilloscope') || cleanedText.includes('waveform')) {
+        const hmfId = `hmf2550_${Date.now()}`
+        const rtbId = `rtb24_${Date.now()}`
+        
+        const newHMF: CanvasNode = {
+          id: hmfId,
+          deviceId: 'hmf2550',
+          name: 'HMF2550',
+          type: 'Function Generator',
+          x: 60,
+          y: 110,
+          properties: { frequency: 10.0, amplitude: 2.0 }
+        }
+        
+        const newRTB: CanvasNode = {
+          id: rtbId,
+          deviceId: 'rtb24',
+          name: 'RTB24',
+          type: 'Oscilloscope',
+          x: 320,
+          y: 110,
+          properties: { timebase: 1.0, ch1Scale: 1.0, trigger: 'CH1' }
+        }
+        
+        setNodes([newHMF, newRTB])
+        setConnections([
+          {
+            id: `${hmfId}-${rtbId}`,
+            fromId: hmfId,
+            toId: rtbId
+          }
+        ])
+        
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `reply_${Date.now()}`,
+            sender: 'assistant',
+            text: "I've set up the function generator to supply a 10 kHz sine wave and linked it to Channel 1 of the RTB24 Oscilloscope. Visual parameters are loaded on the screen. Select a card to edit."
+          }
+        ])
+      } else if (cleanedText.includes('clear') || cleanedText.includes('reset')) {
+        handleClear()
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `reply_${Date.now()}`,
+            sender: 'assistant',
+            text: "Workflow canvas cleared successfully. Let me know what you want to measure next!"
+          }
+        ])
+      } else {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `reply_${Date.now()}`,
+            sender: 'assistant',
+            text: "I couldn't identify a hardware plan for that request. Try sending one of the suggestions below to populate the workbench canvas!"
           }
         ])
       }
-    }
-    setActiveWire(null)
+    }, 850)
   }
 
   const handleSend = (e: React.FormEvent) => {
     e.preventDefault()
     if (!chatInput.trim()) return
+    
+    const userMsg = chatInput.trim()
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: `user_${Date.now()}`,
+        sender: 'user',
+        text: userMsg
+      }
+    ])
     setChatInput('')
+    processIntent(userMsg)
   }
+
+  const handleSuggestionClick = (suggestion: string) => {
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: `user_${Date.now()}`,
+        sender: 'user',
+        text: suggestion
+      }
+    ])
+    processIntent(suggestion)
+  }
+
+  const handleCanvasClick = (e: React.MouseEvent) => {
+    // If clicking directly on the canvas surface, clear node selection
+    if (e.target === canvasRef.current || (e.target as HTMLElement).classList.contains(styles.connectionsSvg)) {
+      setSelectedNodeId(null)
+    }
+  }
+
+  // Selected Node metadata helper
+  const selectedNode = nodes.find((n) => n.id === selectedNodeId)
 
   // Render Visual LCD Display inside the node cards
   const renderNodeScreen = (node: CanvasNode) => {
     switch (node.deviceId) {
-      case 'fpc1500': // Spectrum Analyzer
+      case 'fpc1500': {
+        const center = node.properties.centerFreq ?? 500
+        const span = node.properties.span ?? 10
         return (
           <div className={nodeStyles.nodeScreen}>
             <svg className={nodeStyles.screenSvg}>
@@ -234,10 +287,15 @@ function App() {
               {/* Peak wave path */}
               <path d="M 4 26 L 30 26 L 50 26 L 70 26 L 80 20 L 90 4 L 100 20 L 110 26 L 166 26" />
             </svg>
-            <div className={nodeStyles.screenLabel}>SPAN: 500 MHz</div>
+            <div className={nodeStyles.screenLabel}>
+              CF: {center} MHz | SPAN: {span} MHz
+            </div>
           </div>
         )
-      case 'rtb24': // Oscilloscope
+      }
+      case 'rtb24': {
+        const scale = node.properties.ch1Scale ?? 1.0
+        const tb = node.properties.timebase ?? 1.0
         return (
           <div className={nodeStyles.nodeScreen}>
             <svg className={nodeStyles.screenSvg}>
@@ -250,34 +308,241 @@ function App() {
               {/* Sine Wave */}
               <path d="M 4 16 C 30 0, 50 32, 85 16 C 120 0, 140 32, 166 16" />
             </svg>
-            <div className={nodeStyles.screenLabel}>CH1: 1.00V / DIV</div>
+            <div className={nodeStyles.screenLabel}>
+              CH1: {scale}V | TB: {tb}ms
+            </div>
           </div>
         )
-      case 'nge100': // Power Supply
+      }
+      case 'nge100': {
+        const voltage = node.properties.voltage ?? 12.0
+        const current = node.properties.current ?? 1.5
+        const active = node.properties.output ?? false
         return (
           <div className={nodeStyles.nodeScreen}>
             <div className={nodeStyles.screenReadout}>
-              <span>12.00 V</span>
-              <span>1.50 A</span>
+              <span>{parseFloat(voltage).toFixed(2)} V</span>
+              <span>{parseFloat(current).toFixed(2)} A</span>
             </div>
-            <div className={nodeStyles.screenLabel}>CH1: OUTPUT ON</div>
+            <div className={nodeStyles.screenLabel}>
+              CH1: OUTPUT {active ? 'ON' : 'OFF'}
+            </div>
           </div>
         )
+      }
+      case 'hmf2550': {
+        const freq = node.properties.frequency ?? 10.0
+        const amp = node.properties.amplitude ?? 2.0
+        return (
+          <div className={nodeStyles.nodeScreen}>
+            <div className={nodeStyles.screenReadout} style={{ color: '#00e676', textShadow: '0 0 4px rgba(0, 230, 118, 0.4)' }}>
+              <span>{freq} kHz</span>
+              <span>{amp} Vpp</span>
+            </div>
+            <div className={nodeStyles.screenLabel}>SINE WAVE ACTIVE</div>
+          </div>
+        )
+      }
       default:
         return (
           <div className={nodeStyles.nodeScreen}>
             <div className={nodeStyles.screenReadout} style={{ color: '#0091ff', textShadow: '0 0 4px rgba(0, 145, 255, 0.4)' }}>
-              <span>ACTIVE</span>
+              <span>READY</span>
             </div>
-            <div className={nodeStyles.screenLabel}>SIMULATOR CONNECTED</div>
+            <div className={nodeStyles.screenLabel}>SIMULATOR ONLINE</div>
           </div>
+        )
+    }
+  }
+
+  // Render Property Inspector panel controls
+  const renderInspector = (node: CanvasNode) => {
+    switch (node.deviceId) {
+      case 'nge100':
+        return (
+          <>
+            <div className={inspectorStyles.formGroup}>
+              <label className={inspectorStyles.label}>Channel 1 Voltage</label>
+              <div className={inspectorStyles.inputRow}>
+                <input
+                  type="number"
+                  step="0.1"
+                  className={inspectorStyles.textInput}
+                  value={node.properties.voltage ?? 0}
+                  onChange={(e) => handlePropertyChange(node.id, 'voltage', e.target.value)}
+                />
+                <span className={inspectorStyles.suffix}>V</span>
+              </div>
+            </div>
+            <div className={inspectorStyles.formGroup}>
+              <label className={inspectorStyles.label}>Channel 1 Current Limit</label>
+              <div className={inspectorStyles.inputRow}>
+                <input
+                  type="number"
+                  step="0.05"
+                  className={inspectorStyles.textInput}
+                  value={node.properties.current ?? 0}
+                  onChange={(e) => handlePropertyChange(node.id, 'current', e.target.value)}
+                />
+                <span className={inspectorStyles.suffix}>A</span>
+              </div>
+            </div>
+            <div className={inspectorStyles.switchRow}>
+              <label className={inspectorStyles.switchLabel}>Output Power</label>
+              <button
+                type="button"
+                className={`${inspectorStyles.switchBtn} ${
+                  node.properties.output ? inspectorStyles.switchBtnActive : ''
+                }`}
+                onClick={() => handlePropertyChange(node.id, 'output', !node.properties.output)}
+              >
+                <span
+                  className={`${inspectorStyles.switchHandle} ${
+                    node.properties.output ? inspectorStyles.switchHandleActive : ''
+                  }`}
+                />
+              </button>
+            </div>
+            <p className={inspectorStyles.descriptionText}>
+              The NGE100 is an isolated channels power supply. Maximum voltage output per channel is 32V. Keep values below target limits.
+            </p>
+          </>
+        )
+      case 'fpc1500':
+        return (
+          <>
+            <div className={inspectorStyles.formGroup}>
+              <label className={inspectorStyles.label}>Center Frequency</label>
+              <div className={inspectorStyles.inputRow}>
+                <input
+                  type="number"
+                  className={inspectorStyles.textInput}
+                  value={node.properties.centerFreq ?? 0}
+                  onChange={(e) => handlePropertyChange(node.id, 'centerFreq', e.target.value)}
+                />
+                <span className={inspectorStyles.suffix}>MHz</span>
+              </div>
+            </div>
+            <div className={inspectorStyles.formGroup}>
+              <label className={inspectorStyles.label}>Span</label>
+              <div className={inspectorStyles.inputRow}>
+                <input
+                  type="number"
+                  className={inspectorStyles.textInput}
+                  value={node.properties.span ?? 0}
+                  onChange={(e) => handlePropertyChange(node.id, 'span', e.target.value)}
+                />
+                <span className={inspectorStyles.suffix}>MHz</span>
+              </div>
+            </div>
+            <div className={inspectorStyles.formGroup}>
+              <label className={inspectorStyles.label}>Reference Level</label>
+              <div className={inspectorStyles.inputRow}>
+                <input
+                  type="number"
+                  className={inspectorStyles.textInput}
+                  value={node.properties.refLevel ?? 0}
+                  onChange={(e) => handlePropertyChange(node.id, 'refLevel', e.target.value)}
+                />
+                <span className={inspectorStyles.suffix}>dBm</span>
+              </div>
+            </div>
+            <p className={inspectorStyles.descriptionText}>
+              The FPC1500 spectrum analyzer tracks signal harmonics and power levels. Set center frequency to align with signal interest bands.
+            </p>
+          </>
+        )
+      case 'rtb24':
+        return (
+          <>
+            <div className={inspectorStyles.formGroup}>
+              <label className={inspectorStyles.label}>Vertical Scale (CH1)</label>
+              <div className={inspectorStyles.inputRow}>
+                <input
+                  type="number"
+                  step="0.1"
+                  className={inspectorStyles.textInput}
+                  value={node.properties.ch1Scale ?? 0}
+                  onChange={(e) => handlePropertyChange(node.id, 'ch1Scale', e.target.value)}
+                />
+                <span className={inspectorStyles.suffix}>V/div</span>
+              </div>
+            </div>
+            <div className={inspectorStyles.formGroup}>
+              <label className={inspectorStyles.label}>Horizontal Timebase</label>
+              <div className={inspectorStyles.inputRow}>
+                <input
+                  type="number"
+                  step="0.1"
+                  className={inspectorStyles.textInput}
+                  value={node.properties.timebase ?? 0}
+                  onChange={(e) => handlePropertyChange(node.id, 'timebase', e.target.value)}
+                />
+                <span className={inspectorStyles.suffix}>ms/div</span>
+              </div>
+            </div>
+            <div className={inspectorStyles.formGroup}>
+              <label className={inspectorStyles.label}>Trigger Source</label>
+              <select
+                className={inspectorStyles.selectInput}
+                value={node.properties.trigger ?? 'CH1'}
+                onChange={(e) => handlePropertyChange(node.id, 'trigger', e.target.value)}
+              >
+                <option value="CH1">Channel 1</option>
+                <option value="CH2">Channel 2</option>
+                <option value="EXT">External</option>
+              </select>
+            </div>
+            <p className={inspectorStyles.descriptionText}>
+              The RTB24 oscilloscope shows waveform sweeps. Make sure timebase is set narrow enough to capture transient peaks.
+            </p>
+          </>
+        )
+      case 'hmf2550':
+        return (
+          <>
+            <div className={inspectorStyles.formGroup}>
+              <label className={inspectorStyles.label}>Frequency</label>
+              <div className={inspectorStyles.inputRow}>
+                <input
+                  type="number"
+                  className={inspectorStyles.textInput}
+                  value={node.properties.frequency ?? 0}
+                  onChange={(e) => handlePropertyChange(node.id, 'frequency', e.target.value)}
+                />
+                <span className={inspectorStyles.suffix}>kHz</span>
+              </div>
+            </div>
+            <div className={inspectorStyles.formGroup}>
+              <label className={inspectorStyles.label}>Amplitude</label>
+              <div className={inspectorStyles.inputRow}>
+                <input
+                  type="number"
+                  step="0.1"
+                  className={inspectorStyles.textInput}
+                  value={node.properties.amplitude ?? 0}
+                  onChange={(e) => handlePropertyChange(node.id, 'amplitude', e.target.value)}
+                />
+                <span className={inspectorStyles.suffix}>Vpp</span>
+              </div>
+            </div>
+            <p className={inspectorStyles.descriptionText}>
+              Function generator supplying sine, triangle, or square waves up to 50 MHz.
+            </p>
+          </>
+        )
+      default:
+        return (
+          <p className={inspectorStyles.descriptionText}>
+            No custom parameter settings available for this secondary device. It runs under mock diagnostic validation check values.
+          </p>
         )
     }
   }
 
   return (
     <div className={styles.appContainer}>
-      {/* LEFT SIDEBAR: Branding Header & Instruments List */}
+      {/* LEFT SIDEBAR: Branding & Static Instrument List */}
       <aside className={styles.sidebar}>
         <div className={styles.logoSection}>
           <div className={styles.logoIcon}>⚡</div>
@@ -292,12 +557,7 @@ function App() {
           {devices.map((device) => {
             const typeColor = getDeviceColor(device.type)
             return (
-              <div
-                key={device.id}
-                className={styles.deviceCard}
-                draggable
-                onDragStart={(e) => handleSidebarDragStart(e, device.id)}
-              >
+              <div key={device.id} className={styles.deviceCard} style={{ cursor: 'default' }}>
                 <span className={styles.deviceName}>{device.name}</span>
                 <span className={styles.deviceBadge}>
                   <span
@@ -333,14 +593,8 @@ function App() {
         {/* CANVAS SURFACE */}
         <div
           ref={canvasRef}
-          className={`${styles.canvasSurface} ${
-            isDraggingOver ? styles.canvasSurfaceDragging : ''
-          }`}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-          onMouseMove={handleCanvasMouseMove}
-          onMouseUp={handleCanvasMouseUp}
+          className={styles.canvasSurface}
+          onClick={handleCanvasClick}
         >
           {/* SVG CONNECTIONS OVERLAY */}
           <svg className={styles.connectionsSvg}>
@@ -349,9 +603,9 @@ function App() {
               const toNode = nodes.find((n) => n.id === conn.toId)
               if (!fromNode || !toNode) return null
 
-              const x1 = fromNode.x + 190 // Output Port
-              const y1 = fromNode.y + 62  // Vertically centered
-              const x2 = toNode.x         // Input Port
+              const x1 = fromNode.x + 190 // Output Socket
+              const y1 = fromNode.y + 62  // Card Center Height
+              const x2 = toNode.x         // Input Socket
               const y2 = toNode.y + 62
 
               // Curved Bezier calculation
@@ -369,29 +623,13 @@ function App() {
                 />
               )
             })}
-
-            {/* Active wire being dragged */}
-            {activeWire && (
-              <path
-                d={`M ${activeWire.startX} ${activeWire.startY} C ${
-                  activeWire.startX + 50
-                } ${activeWire.startY}, ${activeWire.currentX - 50} ${
-                  activeWire.currentY
-                }, ${activeWire.currentX} ${activeWire.currentY}`}
-                stroke="var(--color-primary)"
-                strokeWidth="2"
-                strokeDasharray="4 3"
-                fill="none"
-                style={{ opacity: 0.8 }}
-              />
-            )}
           </svg>
 
           {nodes.length === 0 ? (
             <div className={styles.emptyState}>
-              <div className={styles.emptyStateIcon}>＋</div>
+              <div className={styles.emptyStateIcon}>⚡</div>
               <div className={styles.emptyStateText}>
-                Drag an instrument here to start
+                Describe a test flow to begin
               </div>
             </div>
           ) : (
@@ -399,25 +637,25 @@ function App() {
               const borderLeftColor = getDeviceColor(node.type)
               const hasInputConnection = connections.some((c) => c.toId === node.id)
               const hasOutputConnection = connections.some((c) => c.fromId === node.id)
+              const isSelected = selectedNodeId === node.id
               
               return (
                 <div
                   key={node.id}
-                  className={nodeStyles.nodeCard}
+                  className={`${nodeStyles.nodeCard} ${isSelected ? nodeStyles.nodeCardSelected : ''}`}
                   style={{
-                    transform: `translate(${node.x}px, ${node.y}px)`,
-                    borderLeft: `4px solid ${borderLeftColor}`
+                    transform: `translate(${node.x}px, ${node.y}px)`
                   }}
-                  draggable
-                  onDragStart={(e) => handleNodeDragStart(e, node)}
-                  onDragEnd={handleDragEnd}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setSelectedNodeId(node.id)
+                  }}
                 >
-                  {/* Left Connection Port */}
+                  {/* Visual Left Connection Port */}
                   <div
                     className={`${nodeStyles.port} ${nodeStyles.portLeft} ${
                       hasInputConnection ? nodeStyles.portConnected : ''
                     }`}
-                    onMouseUp={(e) => handlePortMouseUp(e, node.id)}
                     title="Input Port"
                   />
 
@@ -441,17 +679,22 @@ function App() {
 
                   <div className={nodeStyles.nodeBody}>
                     <div className={nodeStyles.statusIndicator}>
-                      <span className={`${nodeStyles.statusDot} ${nodeStyles.statusDotActive}`} />
-                      <span>Simulated</span>
+                      <span
+                        className={`${nodeStyles.statusDot} ${nodeStyles.statusDotActive}`}
+                        style={{
+                          backgroundColor: borderLeftColor,
+                          boxShadow: `0 0 6px ${borderLeftColor}`
+                        }}
+                      />
+                      <span>Active</span>
                     </div>
                   </div>
 
-                  {/* Right Connection Port */}
+                  {/* Visual Right Connection Port */}
                   <div
                     className={`${nodeStyles.port} ${nodeStyles.portRight} ${
                       hasOutputConnection ? nodeStyles.portConnected : ''
                     }`}
-                    onMouseDown={(e) => handlePortMouseDown(e, node.id)}
                     title="Output Port"
                   />
                 </div>
@@ -461,32 +704,111 @@ function App() {
         </div>
       </main>
 
-      {/* RIGHT PANEL: Chat Assistant */}
+      {/* RIGHT PANEL: Chat Assistant OR Property Inspector */}
       <section className={styles.chatPanel}>
-        <div className={styles.chatTitle}>
-          <span className={styles.chatIndicator} />
-          Voltaic Assistant
-        </div>
-        <div className={styles.messageList}>
-          <div className={`${styles.messageItem} ${styles.messageAssistant}`}>
-            <span className={styles.messageSender}>Assistant</span>
-            <div className={`${styles.messageBubble} ${styles.bubbleAssistant}`}>
-              Hi! Describe a measurement and I'll build the workflow for you.
+        {selectedNode ? (
+          /* PROPERTY INSPECTOR VIEW */
+          <div className={inspectorStyles.inspectorContainer}>
+            <div className={inspectorStyles.inspectorHeader}>
+              <button
+                className={inspectorStyles.backButton}
+                onClick={() => setSelectedNodeId(null)}
+                title="Back to assistant"
+              >
+                ◀
+              </button>
+              <div className={inspectorStyles.headerTitles}>
+                <span className={inspectorStyles.title}>Properties: {selectedNode.name}</span>
+                <span className={inspectorStyles.subtitle}>{selectedNode.type}</span>
+              </div>
+            </div>
+            <div className={inspectorStyles.inspectorContent}>
+              {renderInspector(selectedNode)}
             </div>
           </div>
-        </div>
-        <form onSubmit={handleSend} className={styles.inputArea}>
-          <input
-            type="text"
-            className={styles.textInput}
-            placeholder="Describe a measurement flow..."
-            value={chatInput}
-            onChange={(e) => setChatInput(e.target.value)}
-          />
-          <button type="submit" className={styles.sendButton}>
-            Send
-          </button>
-        </form>
+        ) : (
+          /* ASSISTANT CHAT VIEW */
+          <>
+            <div className={styles.chatTitle}>
+              <span className={styles.chatIndicator} />
+              Voltaic Assistant
+            </div>
+            
+            <div className={styles.messageList}>
+              {messages.map((msg) => (
+                <div
+                  key={msg.id}
+                  className={`${styles.messageItem} ${
+                    msg.sender === 'user' ? styles.messageUser : styles.messageAssistant
+                  }`}
+                >
+                  <span className={styles.messageSender}>
+                    {msg.sender === 'user' ? 'User' : 'Assistant'}
+                  </span>
+                  <div
+                    className={`${styles.messageBubble} ${
+                      msg.sender === 'user' ? styles.bubbleUser : styles.bubbleAssistant
+                    }`}
+                  >
+                    {msg.text}
+                  </div>
+                </div>
+              ))}
+              
+              {/* Typing indicator */}
+              {isTyping && (
+                <div className={`${styles.messageItem} ${styles.messageAssistant}`}>
+                  <span className={styles.messageSender}>Assistant</span>
+                  <div className={`${styles.messageBubble} ${styles.bubbleAssistant}`} style={{ display: 'flex', gap: '3px', padding: '10px 14px' }}>
+                    <span style={{ width: '4px', height: '4px', background: '#888', borderRadius: '50%', animation: 'bounce 0.6s infinite alternate' }} />
+                    <span style={{ width: '4px', height: '4px', background: '#888', borderRadius: '50%', animation: 'bounce 0.6s infinite alternate 0.2s' }} />
+                    <span style={{ width: '4px', height: '4px', background: '#888', borderRadius: '50%', animation: 'bounce 0.6s infinite alternate 0.4s' }} />
+                  </div>
+                </div>
+              )}
+              
+              {/* Suggestion Chips */}
+              {!isTyping && (
+                <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', padding: '8px 0' }}>
+                  <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', paddingLeft: '4px' }}>
+                    Suggestions
+                  </span>
+                  <button
+                    onClick={() => handleSuggestionClick('measure SNR of amplifier')}
+                    style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--color-text)', borderRadius: '6px', padding: '8px 10px', fontSize: '12px', textAlign: 'left', cursor: 'pointer', outline: 'none', transition: 'all 0.15s' }}
+                    onMouseOver={(e) => { e.currentTarget.style.borderColor = '#383838'; e.currentTarget.style.backgroundColor = 'var(--bg-card-hover)'; }}
+                    onMouseOut={(e) => { e.currentTarget.style.borderColor = 'var(--border-color)'; e.currentTarget.style.backgroundColor = 'var(--bg-card)'; }}
+                  >
+                    ⚡ "measure SNR of amplifier at 500 MHz"
+                  </button>
+                  <button
+                    onClick={() => handleSuggestionClick('measure sine wave parameters')}
+                    style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--color-text)', borderRadius: '6px', padding: '8px 10px', fontSize: '12px', textAlign: 'left', cursor: 'pointer', outline: 'none', transition: 'all 0.15s' }}
+                    onMouseOver={(e) => { e.currentTarget.style.borderColor = '#383838'; e.currentTarget.style.backgroundColor = 'var(--bg-card-hover)'; }}
+                    onMouseOut={(e) => { e.currentTarget.style.borderColor = 'var(--border-color)'; e.currentTarget.style.backgroundColor = 'var(--bg-card)'; }}
+                  >
+                    ⚡ "measure 10 kHz sine wave parameters"
+                  </button>
+                </div>
+              )}
+              
+              <div ref={messageEndRef} />
+            </div>
+            
+            <form onSubmit={handleSend} className={styles.inputArea}>
+              <input
+                type="text"
+                className={styles.textInput}
+                placeholder="Describe a measurement flow..."
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+              />
+              <button type="submit" className={styles.sendButton}>
+                Send
+              </button>
+            </form>
+          </>
+        )}
       </section>
     </div>
   )
