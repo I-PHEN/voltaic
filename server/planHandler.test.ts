@@ -26,6 +26,18 @@ describe('parseAndValidatePlan', () => {
   it('throws on invalid JSON', () => {
     expect(() => parseAndValidatePlan('not json')).toThrow()
   })
+
+  it('drops self-referential and out-of-range connections', () => {
+    const raw = JSON.stringify({
+      devices: [
+        { deviceId: 'hmf2550', properties: { frequency: 10 }, role: 'gen' },
+        { deviceId: 'rtb24', properties: { ch1Scale: 1 }, role: 'scope' },
+      ],
+      connections: [{ from: 0, to: 0 }, { from: 0, to: 5 }, { from: 0, to: 1 }],
+      summary: 'ok',
+    })
+    expect(parseAndValidatePlan(raw).connections).toEqual([{ from: 0, to: 1 }])
+  })
 })
 
 describe('handlePlanRequest', () => {

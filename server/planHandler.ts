@@ -71,9 +71,13 @@ export function parseAndValidatePlan(rawContent: string): Plan {
     adjustments.push(...adj)
     return { ...d, properties: clamped as typeof d.properties }
   })
+  // Drop connections with self-referential or out-of-range indices.
+  const connections = parsed.connections.filter(
+    (c) => c.from !== c.to && c.from >= 0 && c.from < devices.length && c.to >= 0 && c.to < devices.length,
+  )
   let summary = parsed.summary
   if (adjustments.length > 0) summary += ` (Safety adjustments: ${adjustments.join('; ')}.)`
-  return { ...parsed, devices, summary }
+  return { ...parsed, devices, connections, summary }
 }
 
 async function callProvider(messages: ChatMessage[], config: PlanHandlerConfig): Promise<string> {
