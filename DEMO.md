@@ -47,6 +47,7 @@ Open the URL it prints (usually **http://localhost:5173** or **5174**).
 ### Building (natural-language → configured bench)
 - `Set up a bench to measure the SNR of an RF amplifier operating at 850 MHz`
 - `Characterize a 47 kHz signal at 3 volts peak-to-peak on the oscilloscope`
+- `Generate a 25 kHz square wave and display it on the oscilloscope` → the node reads **SQUARE WAVE ACTIVE** and the script emits `FUNC SQU` (try "triangle" too)
 - `Power a sensor board at 3.3 V with a half-amp current limit and watch its rail on the scope`
 - `Drive a 10 MHz sine wave into the oscilloscope`  *(MHz on the generator now converts correctly)*
 - `Power an amplifier at 12 V, inject a 20 kHz sine, and capture both its spectrum and its waveform`  *(builds all four instruments)*
