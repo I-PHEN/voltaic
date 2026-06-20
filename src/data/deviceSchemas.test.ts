@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { deviceSchemas, plannableDeviceIds, clampParams, buildDeviceCatalog } from './deviceSchemas'
+import { deviceSchemas, plannableDeviceIds, clampParams, buildDeviceCatalog, validateDeviceProperties } from './deviceSchemas'
 
 describe('deviceSchemas', () => {
   it('covers exactly the four plannable devices', () => {
@@ -29,5 +29,28 @@ describe('deviceSchemas', () => {
     expect(catalog).toContain('FPC1500')
     expect(catalog).toContain('RTB24')
     expect(catalog).toContain('HMF2550')
+  })
+
+  it('exposes the function-generator waveform options in the catalog', () => {
+    const catalog = buildDeviceCatalog()
+    expect(catalog).toContain('waveform')
+    expect(catalog).toContain('Square')
+  })
+})
+
+describe('validateDeviceProperties', () => {
+  it('flags an out-of-range numeric parameter', () => {
+    const errors = validateDeviceProperties('nge100', { voltage: 48, current: 1 })
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toContain('Voltage')
+    expect(errors[0]).toContain('32')
+  })
+
+  it('returns no errors when every value is within limits', () => {
+    expect(validateDeviceProperties('hmf2550', { frequency: 25, amplitude: 2, waveform: 'Square' })).toEqual([])
+  })
+
+  it('ignores enum and boolean params', () => {
+    expect(validateDeviceProperties('rtb24', { ch1Scale: 1, timebase: 1, trigger: 'EXT' })).toEqual([])
   })
 })

@@ -172,6 +172,8 @@ def run_experiment():
     if (node.deviceId === 'hmf2550') {
       const freq = parseFloat(node.properties.frequency ?? 10.0);
       const amp = parseFloat(node.properties.amplitude ?? 2.0);
+      const waveform = node.properties.waveform ?? 'Sine';
+      const funcScpi = waveform === 'Square' ? 'SQU' : waveform === 'Triangle' ? 'TRI' : 'SIN';
 
       script += `    # ------------------------------------------------------------
     # Configure HMF2550 Function Generator
@@ -182,22 +184,23 @@ def run_experiment():
         hmf.read_termination = '\\n'
         hmf.write_termination = '\\n'
         hmf.timeout = 5000
-        
-        # Reset and configure reference sine wave output
+
+        # Reset and configure ${waveform.toLowerCase()} wave output
         hmf.write("*RST")
+        hmf.write("FUNC ${funcScpi}")
         hmf.write("FREQ ${freq}e3") # Convert kHz to Hz
         hmf.write("VOLT ${amp}")
         hmf.write("OUTP ON")
-        
+
         print(f" HMF2550 Status: {hmf.query('*IDN?')}")
-        print(" HMF2550 sine wave active: Freq = ${freq} kHz, Amplitude = ${amp} Vpp")
+        print(" HMF2550 ${waveform.toLowerCase()} wave active: Freq = ${freq} kHz, Amplitude = ${amp} Vpp")
         hmf.close()
     except Exception as e:
         print(f" Error connecting to HMF2550: {e}")
 
 `;
-      checklist.push(`Verify the coaxial signal cables are plugged into R&S HMF2550 Channel 1 output port and verify reference wave frequency is **${freq} kHz**.`);
-      rationale.push(`Configure HMF2550 (Function Generator): Set frequency to **${freq} kHz** and amplitude to **${amp} Vpp** sine wave. Reason: injects a clean, controlled reference wave into the input of the system under test to evaluate dynamic gain and phase response.`);
+      checklist.push(`Verify the coaxial signal cables are plugged into R&S HMF2550 Channel 1 output port and verify the **${waveform.toLowerCase()}** reference wave frequency is **${freq} kHz**.`);
+      rationale.push(`Configure HMF2550 (Function Generator): Set a **${waveform.toLowerCase()}** wave at **${freq} kHz** and **${amp} Vpp**. Reason: injects a clean, controlled reference wave into the input of the system under test to evaluate dynamic gain and phase response.`);
     }
   });
 

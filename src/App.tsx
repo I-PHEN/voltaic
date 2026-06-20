@@ -7,6 +7,7 @@ import { generateWorkflowSteps, type WorkflowStep } from './data/workflow'
 import { generateScriptAndChecklist, generateSCPITerminalLogsFromScript, type SCPILogLine } from './data/scriptGenerator'
 import { fetchPlan, planToWorkflowSteps } from './data/planClient'
 import { transcribeAudio } from './data/voiceClient'
+import { validateDeviceProperties } from './data/deviceSchemas'
 
 interface CanvasNode {
   id: string;
@@ -567,71 +568,12 @@ function App() {
     const errors: Record<string, string[]> = {}
 
     nodes.forEach((node) => {
-      const nodeErrors: string[] = []
-      if (node.deviceId === 'nge100') {
-        const v = parseFloat(node.properties.voltage ?? 0)
-        const c = parseFloat(node.properties.current ?? 0)
-        if (v < 0 || v > 32) {
-          const errMsg = `Voltage limit error: Configured voltage of **${v} V** exceeds physical channel hardware thresholds (0.00V - 32.00V).`
-          report.push(`- ❌ **NGE100**: ${errMsg}`)
-          nodeErrors.push(errMsg)
-          hasErrors = true
-        }
-        if (c < 0.05 || c > 3.0) {
-          const errMsg = `Current limit error: Limit of **${c} A** exceeds socket limits (0.05A - 3.00A).`
-          report.push(`- ❌ **NGE100**: ${errMsg}`)
-          nodeErrors.push(errMsg)
-          hasErrors = true
-        }
-      } else if (node.deviceId === 'fpc1500') {
-        const cf = parseFloat(node.properties.centerFreq ?? 0)
-        const span = parseFloat(node.properties.span ?? 0)
-        if (cf < 0.005 || cf > 1500) {
-          const errMsg = `RF range error: Center Frequency **${cf} MHz** is out of bounds (0.005 MHz - 1500.00 MHz).`
-          report.push(`- ❌ **FPC1500**: ${errMsg}`)
-          nodeErrors.push(errMsg)
-          hasErrors = true
-        }
-        if (span < 0.00001 || span > 1500) {
-          const errMsg = `Span scale error: Sweep span of **${span} MHz** is out of bounds (10 Hz - 1500.00 MHz).`
-          report.push(`- ❌ **FPC1500**: ${errMsg}`)
-          nodeErrors.push(errMsg)
-          hasErrors = true
-        }
-      } else if (node.deviceId === 'rtb24') {
-        const scale = parseFloat(node.properties.ch1Scale ?? 0)
-        const tb = parseFloat(node.properties.timebase ?? 0)
-        if (scale < 0.001 || scale > 10) {
-          const errMsg = `Scale error: Vertical setting of **${scale} V** is out of bounds (1 mV - 10.00 V).`
-          report.push(`- ❌ **RTB24**: ${errMsg}`)
-          nodeErrors.push(errMsg)
-          hasErrors = true
-        }
-        if (tb < 0.000001 || tb > 500000) {
-          const errMsg = `Horizontal sweep error: Timebase of **${tb} ms** exceeds horizontal sweep thresholds.`
-          report.push(`- ❌ **RTB24**: ${errMsg}`)
-          nodeErrors.push(errMsg)
-          hasErrors = true
-        }
-      } else if (node.deviceId === 'hmf2550') {
-        const freq = parseFloat(node.properties.frequency ?? 0)
-        const amp = parseFloat(node.properties.amplitude ?? 0)
-        if (freq < 0.00001 || freq > 50000) {
-          const errMsg = `Frequency error: Reference frequency **${freq} kHz** is out of bounds (0.00001 kHz - 50000.00 kHz).`
-          report.push(`- ❌ **HMF2550**: ${errMsg}`)
-          nodeErrors.push(errMsg)
-          hasErrors = true
-        }
-        if (amp < 0.001 || amp > 10) {
-          const errMsg = `Amplitude error: Waveform amplitude of **${amp} Vpp** exceeds hardware limits.`
-          report.push(`- ❌ **HMF2550**: ${errMsg}`)
-          nodeErrors.push(errMsg)
-          hasErrors = true
-        }
-      }
-
+      // Limits come from deviceSchemas — the single source of truth shared with the AI planner.
+      const nodeErrors = validateDeviceProperties(node.deviceId, node.properties)
       if (nodeErrors.length > 0) {
         errors[node.id] = nodeErrors
+        nodeErrors.forEach((e) => report.push(`- ❌ **${node.name}**: ${e}`))
+        hasErrors = true
       }
     })
 
@@ -1247,13 +1189,14 @@ function App() {
       case 'hmf2550': {
         const freq = node.properties.frequency ?? 10.0
         const amp = node.properties.amplitude ?? 2.0
+        const waveform = node.properties.waveform ?? 'Sine'
         return (
           <div className={nodeStyles.nodeScreen}>
             <div className={nodeStyles.screenReadout} style={{ color: '#00e676', textShadow: '0 0 4px rgba(0, 230, 118, 0.4)' }}>
               <span>{freq} kHz</span>
               <span>{amp} Vpp</span>
             </div>
-            <div className={nodeStyles.screenLabel}>SINE WAVE ACTIVE</div>
+            <div className={nodeStyles.screenLabel}>{String(waveform).toUpperCase()} WAVE ACTIVE</div>
           </div>
         )
       }
@@ -1439,6 +1382,18 @@ function App() {
                 />
                 <span className={inspectorStyles.suffix}>Vpp</span>
               </div>
+            </div>
+            <div className={inspectorStyles.formGroup}>
+              <label className={inspectorStyles.label}>Waveform</label>
+              <select
+                className={inspectorStyles.selectInput}
+                value={node.properties.waveform ?? 'Sine'}
+                onChange={(e) => handlePropertyChange(node.id, 'waveform', e.target.value)}
+              >
+                <option value="Sine">Sine</option>
+                <option value="Square">Square</option>
+                <option value="Triangle">Triangle</option>
+              </select>
             </div>
             <p className={inspectorStyles.descriptionText}>
               Function generator supplying sine, triangle, or square waves up to 50 MHz.

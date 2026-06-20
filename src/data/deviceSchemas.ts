@@ -62,6 +62,7 @@ export const deviceSchemas: Record<PlannableDeviceId, DeviceSchema> = {
     params: [
       { key: 'frequency', label: 'Frequency', unit: 'kHz', type: 'number', default: 10, min: 0.00001, max: 50000 },
       { key: 'amplitude', label: 'Amplitude', unit: 'Vpp', type: 'number', default: 2, min: 0.001, max: 10 },
+      { key: 'waveform', label: 'Waveform', unit: '', type: 'enum', default: 'Sine', options: ['Sine', 'Square', 'Triangle'] },
     ],
   },
 }
@@ -87,6 +88,29 @@ export function clampParams(
     }
   }
   return { clamped, adjustments }
+}
+
+// Single source of truth for validation: checks numeric params against their hardware
+// limits and returns human-readable error messages. Used by the Validate button.
+export function validateDeviceProperties(deviceId: string, properties: Record<string, unknown>): string[] {
+  const schema = (deviceSchemas as Record<string, DeviceSchema>)[deviceId]
+  if (!schema) return []
+  const errors: string[] = []
+
+  for (const spec of schema.params) {
+    if (spec.type !== 'number') continue
+    const raw = properties[spec.key]
+    if (raw == null || raw === '') continue
+    const v = Number(raw)
+    if (Number.isNaN(v)) {
+      errors.push(`${spec.label} must be a number.`)
+      continue
+    }
+    if (spec.min != null && spec.max != null && (v < spec.min || v > spec.max)) {
+      errors.push(`${spec.label} of ${v} ${spec.unit}`.trim() + ` is outside the safe hardware range (${spec.min} – ${spec.max} ${spec.unit})`.trimEnd() + '.')
+    }
+  }
+  return errors
 }
 
 export function buildDeviceCatalog(): string {
